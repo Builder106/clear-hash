@@ -1,0 +1,49 @@
+# Fly.io app config.
+# Usage:
+#   flyctl launch --copy-config --no-deploy   # one-time scaffold (creates the app)
+#   flyctl deploy                              # subsequent deploys
+
+app = "clearhash"
+primary_region = "iad"   # us-east; switch to closest to majority of users
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  RUST_LOG = "clearhash_web=info,tower_http=info"
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 8080
+  auto_stop_machines = "stop"   # Fly's scale-to-zero; cold start ~1-2s
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 100
+    soft_limit = 80
+
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "3s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/healthz"
+    protocol = "http"
+
+# Smallest reasonable Fly machine. The web frontend is cheap; the inspect endpoint is
+# I/O-bound on upstream registry latency.
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256

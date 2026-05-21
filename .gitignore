@@ -1,0 +1,12 @@
+/target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# editors
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# clearhash workdirs
+clearhash-rebuild-*/

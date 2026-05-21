@@ -1,0 +1,23 @@
+[package]
+name = "clearhash-ecosystems"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Ecosystem adapters (npm, PyPI, Cargo) for ClearHash."
+
+[dependencies]
+clearhash-core = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+url = { workspace = true }
+flate2 = { workspace = true }
+tar = { workspace = true }
+walkdir = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }

@@ -1,0 +1,25 @@
+[package]
+name = "clearhash-provenance"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Sigstore/Rekor verification of SLSA attestations for ClearHash."
+
+[dependencies]
+clearhash-core = { workspace = true }
+clearhash-ecosystems = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde_json = { workspace = true }
+x509-parser = "0.16"
+
+[dev-dependencies]
+async-trait = { workspace = true }
+chrono = { workspace = true }
+url = { workspace = true }
+# Full sigstore signature + Rekor inclusion verification (v1.1) will pull in `sigstore`.
+# v1 ships structural + cert-chain checks against Fulcio's identity model.

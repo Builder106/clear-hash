@@ -1,0 +1,9 @@
+{"version":3,"term":{"cols":80,"rows":24},"timestamp":1779379063,"command":"/tmp/clearhash verify npm:sigstore@2.3.1","env":{"SHELL":"/bin/zsh"}}
+[0.017, "o", "[1/5] Fetching sigstore from npm\r\n"]
+[0.250, "o", "      sha256: 1b5041a35f86125db7f872742502470753fd2e1109521b7dbff8a61d229a03c2\r\n[2/5] Verifying Sigstore attestation\r\n"]
+[0.000, "o", "\u001b[2m2026-05-21T15:57:43.987657Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mclearhash_provenance\u001b[0m\u001b[2m:\u001b[0m v1 provenance: validated structural + cert-chain + identity. Full Cosign signature + Rekor inclusion proof verification is v1.1.\r\n      commit: 46e7056ff991  (workflow: https://github.com/sigstore/sigstore-js/.github/workflows/release.yml@refs/heads/main)\r\n"]
+[0.001, "o", "[3/5] Spinning up rebuild container (node:20.11.1-bookworm-slim)\r\n"]
+[0.013, "o", "[4/5] Rebuilding from source at commit 46e7056ff991\r\n"]
+[36.505, "o", "      built: /var/folders/th/7mvwj7mj5k171tj_wphtwx_m0000gn/T/clearhash-rebuild-CmhmXG/rebuilt/out/sigstore-2.3.1.tgz\r\n[5/5] Comparing file trees\r\n"]
+[0.002, "o", "\r\n✓ MATCH npm:sigstore@2.3.1 tree-hash ec714016d7e4ce742f9aa23b6f16f19cb967bf82b78c343297013dcc268b107e\r\n"]
+[2.423, "x", "0"]

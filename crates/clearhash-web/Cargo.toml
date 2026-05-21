@@ -1,0 +1,39 @@
+[package]
+name = "clearhash-web"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Web frontend + inspect API for ClearHash."
+
+[lib]
+name = "clearhash_web"
+path = "src/lib.rs"
+
+[[bin]]
+name = "clearhash-web"
+path = "src/main.rs"
+
+[dependencies]
+clearhash-core = { workspace = true }
+clearhash-ecosystems = { workspace = true }
+clearhash-registry = { workspace = true }
+clearhash-provenance = { workspace = true }
+
+tokio = { workspace = true }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "query", "macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "trace", "compression-gzip", "set-header", "limit", "timeout"] }
+maud = { version = "0.27", features = ["axum"] }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# rate-limiting helper
+governor = "0.7"

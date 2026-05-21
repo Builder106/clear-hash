@@ -1,0 +1,6 @@
+{"version":3,"term":{"cols":80,"rows":24},"timestamp":1779379056,"command":"/tmp/clearhash inspect npm:sigstore@2.3.1","env":{"SHELL":"/bin/zsh"}}
+[0.014, "o", "[1/2] Fetching npm:sigstore@2.3.1 from npm\r\n"]
+[0.302, "o", "      sha256: 1b5041a35f86125db7f872742502470753fd2e1109521b7dbff8a61d229a03c2\r\n[2/2] Parsing attestation envelope\r\n"]
+[0.001, "o", "\u001b[2m2026-05-21T15:57:36.469856Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2mclearhash_provenance\u001b[0m\u001b[2m:\u001b[0m v1 provenance: validated structural + cert-chain + identity. Full Cosign signature + Rekor inclusion proof verification is v1.1.\r\n\r\nPackage      npm:sigstore@2.3.1\r\nRegistry SHA  1b5041a35f86125db7f872742502470753fd2e1109521b7dbff8a61d229a03c2\r\nAttestation\r\n"]
+[0.000, "o", "  Source       git+https://github.com/sigstore/sigstore-js@refs/heads/main\r\n  Commit       46e7056ff9912ebfee5298d94024895a9fea76c0\r\n  Builder      https://github.com/actions/runner/github-hosted\r\n  Cert issuer  O=sigstore.dev, CN=sigstore-intermediate\r\n  Workflow     https://github.com/sigstore/sigstore-js/.github/workflows/release.yml@refs/heads/main\r\n  Rekor index  94408136\r\n"]
+[0.003, "x", "0"]

@@ -1,0 +1,75 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/clearhash-cli",
+    "crates/clearhash-core",
+    "crates/clearhash-ecosystems",
+    "crates/clearhash-registry",
+    "crates/clearhash-provenance",
+    "crates/clearhash-sandbox",
+    "crates/clearhash-web",
+]
+
+# --- Root package: hosts the Vercel function binary ---------------------------------------
+# Vercel's Rust runtime (https://vercel.com/docs/functions/runtimes/rust) expects a
+# Cargo.toml at the project root with [[bin]] entries pointing at api/*.rs handlers. We make
+# the workspace root *also* a normal package so that both the local `cargo build --workspace`
+# and Vercel's `cargo build --release` find what they need.
+
+[package]
+name = "clearhash-vercel"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Vercel serverless function binary that wraps the clearhash-web Axum router."
+
+[dependencies]
+clearhash-web = { path = "crates/clearhash-web" }
+vercel_runtime = { version = "2", features = ["axum"] }
+tokio = { workspace = true }
+tower = "0.5"
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "query"] }
+
+[[bin]]
+name = "clearhash"
+path = "api/clearhash.rs"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/Builder106/ClearHash"
+authors = ["Yinka Vaughan"]
+
+[workspace.dependencies]
+clearhash-core = { path = "crates/clearhash-core" }
+clearhash-ecosystems = { path = "crates/clearhash-ecosystems" }
+clearhash-registry = { path = "crates/clearhash-registry" }
+clearhash-provenance = { path = "crates/clearhash-provenance" }
+clearhash-sandbox = { path = "crates/clearhash-sandbox" }
+
+tokio = { version = "1.40", features = ["full"] }
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_with = { version = "3", features = ["base64", "hex"] }
+thiserror = "1"
+anyhow = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+url = { version = "2", features = ["serde"] }
+bytes = "1"
+sha2 = "0.10"
+hex = "0.4"
+tempfile = "3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = { version = "0.4", default-features = false, features = ["std", "serde", "clock"] }
+flate2 = "1"
+tar = "0.4"
+walkdir = "2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

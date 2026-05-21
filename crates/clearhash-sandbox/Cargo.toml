@@ -1,0 +1,23 @@
+[package]
+name = "clearhash-sandbox"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Docker rebuild orchestration and file-tree comparison for ClearHash."
+
+[dependencies]
+clearhash-core = { workspace = true }
+clearhash-ecosystems = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+flate2 = { workspace = true }
+tar = { workspace = true }
+tempfile = { workspace = true }
+walkdir = { workspace = true }
+bollard = "0.17"
+futures-util = "0.3"
+bytes = { workspace = true }

@@ -1,0 +1,31 @@
+[package]
+name = "clearhash-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "ClearHash CLI: rebuild-and-compare verification of package artifacts."
+
+[[bin]]
+name = "clearhash"
+path = "src/main.rs"
+
+[dependencies]
+clearhash-core = { workspace = true }
+clearhash-ecosystems = { workspace = true }
+clearhash-registry = { workspace = true }
+clearhash-provenance = { workspace = true }
+clearhash-sandbox = { workspace = true }
+
+tokio = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+console = "0.15"
+indicatif = "0.17"
+anyhow = { workspace = true }
+tempfile = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }

@@ -1,0 +1,13 @@
+target/
+.git/
+.github/
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# Demo recordings are large; the runtime only needs the rendered GIFs.
+assets/*.cast
+
+# Local scratch
+clearhash-rebuild-*/
