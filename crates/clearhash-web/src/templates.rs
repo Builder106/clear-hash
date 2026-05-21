@@ -160,6 +160,16 @@ fn layout(title: &str, body: Markup) -> Markup {
                         "ClearHash — MIT-licensed. " a href="https://github.com/Builder106/ClearHash" { "Source on GitHub" } "."
                     }
                 }
+
+                // Vercel Web Analytics + Speed Insights.
+                // Scripts are served by Vercel's edge at the canonical paths; they 404
+                // harmlessly in local dev. Enable each in the Vercel dashboard
+                // (clear-hash → Analytics → Enable, same for Speed Insights) for data to
+                // start flowing.
+                script { (PreEscaped("window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };")) }
+                script defer src="/_vercel/insights/script.js" {}
+                script { (PreEscaped("window.si = window.si || function () { (window.siq = window.siq || []).push(arguments); };")) }
+                script defer src="/_vercel/speed-insights/script.js" {}
             }
         }
     }
