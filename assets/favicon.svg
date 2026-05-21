@@ -1,0 +1,33 @@
+<!-- ClearHash favicon.
+     64×64 viewBox; designed for legibility at 16×16 and 32×32.
+     Shield silhouette (matching the banner) filled with the brand gradient,
+     with the `#` knocked out via a mask so the underlying page color shows through.
+     This makes the icon readable on any tab-bar / bookmark-bar background. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0"   stop-color="#7dd3fc"/>
+      <stop offset="0.55" stop-color="#a78bfa"/>
+      <stop offset="1"   stop-color="#f472b6"/>
+    </linearGradient>
+    <mask id="hash-mask">
+      <!-- white = visible, black = knocked out -->
+      <rect width="64" height="64" fill="white"/>
+      <!-- # rendered as 4 solid bars. Slightly thicker than a typical # so it survives 16×16. -->
+      <rect x="22" y="18" width="6" height="28" fill="black"/>
+      <rect x="36" y="18" width="6" height="28" fill="black"/>
+      <rect x="14" y="25" width="36" height="6" fill="black"/>
+      <rect x="14" y="36" width="36" height="6" fill="black"/>
+    </mask>
+  </defs>
+
+  <!-- Shield. Geometry mirrors the banner's: flat top, sloped sides, rounded chevron base. -->
+  <path d="M 32,3
+           L 58,11
+           L 58,32
+           Q 58,49 32,61
+           Q 6,49 6,32
+           L 6,11 Z"
+        fill="url(#g)"
+        mask="url(#hash-mask)"/>
+</svg>

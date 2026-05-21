@@ -137,7 +137,10 @@ fn layout(title: &str, body: Markup) -> Markup {
                 meta property="og:title" content=(title);
                 meta property="og:description" content="Rebuild every package. Compare every byte. Block every tamper.";
                 meta property="og:image" content="/assets/banner-dark.png";
-                link rel="icon" type="image/svg+xml" href="/assets/banner-dark.svg";
+                link rel="icon" type="image/svg+xml" href="/assets/favicon.svg";
+                link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png";
+                link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16.png";
+                link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png";
                 style { (PreEscaped(STYLES)) }
             }
             body {
