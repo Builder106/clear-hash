@@ -30,6 +30,27 @@ impl EcosystemAdapter for CargoAdapter {
         None
     }
 
+    fn latest_version_url(&self, name: &str) -> Option<Url> {
+        let raw = format!("https://crates.io/api/v1/crates/{name}");
+        Some(Url::parse(&raw).expect("cargo latest-version URL"))
+    }
+
+    fn parse_latest_version(&self, body: &[u8]) -> Result<String, AdapterError> {
+        let v: serde_json::Value = serde_json::from_slice(body)
+            .map_err(|e| AdapterError::MalformedAttestation(format!("crates.io metadata: {e}")))?;
+        // `crate.max_stable_version` is what `cargo add <name>` (no version pin) would resolve to.
+        // Falls back to `max_version` if no stable release exists (pre-1.0 crates).
+        v.get("crate")
+            .and_then(|c| c.get("max_stable_version").or_else(|| c.get("max_version")))
+            .and_then(|s| s.as_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| {
+                AdapterError::MalformedAttestation(
+                    "crates.io response missing crate.max_stable_version".into(),
+                )
+            })
+    }
+
     fn parse_attestation(&self, _bundle: &[u8]) -> Result<ProvenanceClaim, AdapterError> {
         Err(AdapterError::Unimplemented("cargo.parse_attestation"))
     }

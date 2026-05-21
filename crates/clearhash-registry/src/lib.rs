@@ -34,6 +34,10 @@ pub enum FetchError {
     Io(#[from] std::io::Error),
     #[error("registry returned status {0} for {1}")]
     BadStatus(reqwest::StatusCode, String),
+    #[error("adapter: {0}")]
+    Adapter(#[from] clearhash_ecosystems::AdapterError),
+    #[error("ecosystem does not support latest-version resolution")]
+    UnsupportedResolution,
 }
 
 pub async fn fetch(
@@ -84,4 +88,29 @@ pub async fn fetch(
         registry_sha256,
         _tempdir: dir,
     })
+}
+
+/// Resolve the latest stable version for a package name via the adapter's metadata endpoint.
+/// Returns `UnsupportedResolution` if the ecosystem hasn't implemented `latest_version_url`.
+pub async fn resolve_latest_version(
+    adapter: &dyn EcosystemAdapter,
+    name: &str,
+) -> Result<String, FetchError> {
+    let url = adapter
+        .latest_version_url(name)
+        .ok_or(FetchError::UnsupportedResolution)?;
+
+    let client = reqwest::Client::builder()
+        .user_agent(concat!("clearhash/", env!("CARGO_PKG_VERSION")))
+        .timeout(Duration::from_secs(15))
+        .build()?;
+
+    tracing::info!(url = %url, "resolving latest version");
+    let resp = client.get(url.clone()).send().await?;
+    if !resp.status().is_success() {
+        return Err(FetchError::BadStatus(resp.status(), url.into()));
+    }
+    let body = resp.bytes().await?;
+    let version = adapter.parse_latest_version(&body)?;
+    Ok(version)
 }

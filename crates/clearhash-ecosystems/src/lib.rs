@@ -32,6 +32,25 @@ pub trait EcosystemAdapter: Send + Sync {
     /// adapter's way of telling the CLI "this ecosystem requires --allow-unattested."
     fn attestation_url(&self, pkg: &PackageRef) -> Option<Url>;
 
+    // --- Optional: latest-version resolution -------------------------------------------
+
+    /// URL whose response body, when fed to `parse_latest_version`, yields the latest stable
+    /// version string for the given package name. Used by the web frontend to accept
+    /// `<ecosystem>:<name>` inputs without an `@<version>` suffix.
+    ///
+    /// Returning `None` means this ecosystem doesn't support latest-resolution. The web layer
+    /// surfaces the underlying parse error in that case.
+    fn latest_version_url(&self, name: &str) -> Option<Url> {
+        let _ = name;
+        None
+    }
+
+    /// Parse the latest stable version out of the response body served by `latest_version_url`.
+    fn parse_latest_version(&self, body: &[u8]) -> Result<String, AdapterError> {
+        let _ = body;
+        Err(AdapterError::Unimplemented("parse_latest_version"))
+    }
+
     // --- Step 2: parse the attestation envelope ----------------------------------------
 
     /// Pull the SLSA in-toto statement (DSSE-wrapped) out of a registry-specific envelope.

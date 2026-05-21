@@ -121,6 +121,7 @@ form.inspect input[type="text"]:focus { outline: 2px solid var(--accent); border
 .badge.ok { background: rgba(34, 197, 94, 0.18); color: var(--ok); }
 .badge.warn { background: rgba(245, 158, 11, 0.18); color: var(--warn); }
 .badge.bad { background: rgba(244, 114, 182, 0.18); color: var(--bad); }
+.badge.info { background: rgba(125, 211, 252, 0.18); color: var(--accent-2); }
 footer { padding: 48px 0 64px; color: var(--fg-dim); font-size: 13px; }
 footer a { color: var(--fg-dim); }
 "#;
@@ -297,16 +298,27 @@ pub fn inspect_result(package: &str, result: &InspectResult) -> Markup {
         Some(_) => html! { span.badge.ok { "attested" } },
         None => html! { span.badge.warn { "no attestation" } },
     };
+    let latest_badge = if result.inferred_latest {
+        html! { " " span.badge.info { "resolved to latest" } }
+    } else {
+        html! {}
+    };
+    // The form should show the *resolved* reference so users can copy/paste a stable URL.
+    let prefill: &str = if result.inferred_latest {
+        &result.package
+    } else {
+        package
+    };
     layout(
-        &format!("ClearHash · {}", package),
+        &format!("ClearHash · {}", result.package),
         html! {
             div.wrap {
                 section {
                     h2 { "Inspect a package" }
-                    (inspect_form(package))
+                    (inspect_form(prefill))
                     div.result {
                         table {
-                            tr { th { "Package" } td { (result.package) " " (attestation_badge) } }
+                            tr { th { "Package" } td { (result.package) " " (attestation_badge) (latest_badge) } }
                             tr { th { "Registry SHA-256" } td { (result.registry_sha256) } }
                             @if let Some(a) = &result.attestation {
                                 tr { th { "Source repo" } td { (a.source_repo) } }
@@ -375,7 +387,7 @@ fn inspect_form(prefill: &str) -> Markup {
         }
         div.example-pills {
             a href="/inspect?package=npm:sigstore@2.3.1" { "npm:sigstore@2.3.1" }
-            a href="/inspect?package=npm:@sigstore/sign@2.3.2" { "npm:@sigstore/sign@2.3.2" }
+            a href="/inspect?package=npm:@sigstore/sign" title="no version → latest" { "npm:@sigstore/sign (latest)" }
             a href="/inspect?package=npm:left-pad@1.3.0" { "npm:left-pad@1.3.0 (unattested)" }
         }
     }

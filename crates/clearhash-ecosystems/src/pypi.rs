@@ -25,6 +25,24 @@ impl EcosystemAdapter for PypiAdapter {
         None
     }
 
+    fn latest_version_url(&self, name: &str) -> Option<Url> {
+        let raw = format!("https://pypi.org/pypi/{name}/json");
+        Some(Url::parse(&raw).expect("pypi latest-version URL"))
+    }
+
+    fn parse_latest_version(&self, body: &[u8]) -> Result<String, AdapterError> {
+        let v: serde_json::Value = serde_json::from_slice(body)
+            .map_err(|e| AdapterError::MalformedAttestation(format!("pypi metadata: {e}")))?;
+        // `info.version` is the latest *stable* release (what `pip install <pkg>` resolves to).
+        v.get("info")
+            .and_then(|i| i.get("version"))
+            .and_then(|s| s.as_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| {
+                AdapterError::MalformedAttestation("pypi response missing info.version".into())
+            })
+    }
+
     fn parse_attestation(&self, _bundle: &[u8]) -> Result<ProvenanceClaim, AdapterError> {
         Err(AdapterError::Unimplemented("pypi.parse_attestation"))
     }

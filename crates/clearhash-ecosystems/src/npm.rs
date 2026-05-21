@@ -44,6 +44,25 @@ impl EcosystemAdapter for NpmAdapter {
         Some(Url::parse(&raw).expect("npm attestation URL"))
     }
 
+    fn latest_version_url(&self, name: &str) -> Option<Url> {
+        // Package metadata endpoint. Scoped names (`@scope/name`) are URL-safe as-is.
+        let raw = format!("https://registry.npmjs.org/{name}");
+        Some(Url::parse(&raw).expect("npm latest-version URL"))
+    }
+
+    fn parse_latest_version(&self, body: &[u8]) -> Result<String, AdapterError> {
+        let v: serde_json::Value = serde_json::from_slice(body).map_err(|e| {
+            AdapterError::MalformedAttestation(format!("npm package metadata: {e}"))
+        })?;
+        v.get("dist-tags")
+            .and_then(|t| t.get("latest"))
+            .and_then(|s| s.as_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| {
+                AdapterError::MalformedAttestation("npm response missing dist-tags.latest".into())
+            })
+    }
+
     fn parse_attestation(&self, bundle: &[u8]) -> Result<ProvenanceClaim, AdapterError> {
         let env: NpmAttestationResponse = serde_json::from_slice(bundle)
             .map_err(|e| AdapterError::MalformedAttestation(format!("envelope: {e}")))?;

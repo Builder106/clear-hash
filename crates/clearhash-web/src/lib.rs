@@ -113,6 +113,10 @@ pub struct InspectResult {
     pub package: String,
     pub registry_sha256: String,
     pub attestation: Option<InspectAttestation>,
+    /// `true` when the user submitted `<ecosystem>:<name>` with no `@<version>` and we
+    /// auto-resolved to the registry's latest-stable tag.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub inferred_latest: bool,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -139,13 +143,7 @@ async fn do_inspect(state: &AppState, package: &str) -> Result<InspectResult, In
         });
     }
 
-    let pkg: clearhash_core::PackageRef =
-        package
-            .parse()
-            .map_err(|e: clearhash_core::Error| InspectError {
-                status: 400,
-                message: format!("invalid package reference: {e}"),
-            })?;
+    let (pkg, inferred_latest) = parse_or_resolve(package).await?;
 
     let adapter = clearhash_ecosystems::for_ecosystem(pkg.ecosystem);
     let fetched = clearhash_registry::fetch(&*adapter, &pkg)
@@ -179,5 +177,73 @@ async fn do_inspect(state: &AppState, package: &str) -> Result<InspectResult, In
         package: pkg.to_string(),
         registry_sha256: clearhash_core::hex_digest(&fetched.registry_sha256),
         attestation,
+        inferred_latest,
     })
+}
+
+/// Try the strict `<ecosystem>:<name>@<version>` parse first. On failure, accept
+/// `<ecosystem>:<name>` and resolve the version via the adapter's registry-metadata endpoint.
+/// Returns `(PackageRef, inferred_latest)` so the UI can disclose the resolution.
+async fn parse_or_resolve(
+    package: &str,
+) -> Result<(clearhash_core::PackageRef, bool), InspectError> {
+    use std::str::FromStr;
+
+    if let Ok(pkg) = clearhash_core::PackageRef::from_str(package) {
+        return Ok((pkg, false));
+    }
+
+    // Strict parse failed. Try the "ecosystem + bare name" recovery path.
+    let (eco_s, rest) = package.split_once(':').ok_or_else(|| InspectError {
+        status: 400,
+        message: format!(
+            "invalid package reference {package:?}: expected `<ecosystem>:<name>` or `<ecosystem>:<name>@<version>`"
+        ),
+    })?;
+    let ecosystem: clearhash_core::Ecosystem =
+        eco_s
+            .parse()
+            .map_err(|e: clearhash_core::Error| InspectError {
+                status: 400,
+                message: format!("unknown ecosystem {eco_s:?}: {e}"),
+            })?;
+    let name = rest.trim().trim_end_matches('@');
+    if name.is_empty() {
+        return Err(InspectError {
+            status: 400,
+            message: format!("invalid package reference {package:?}: empty package name"),
+        });
+    }
+
+    let adapter = clearhash_ecosystems::for_ecosystem(ecosystem);
+    let version = clearhash_registry::resolve_latest_version(&*adapter, name)
+        .await
+        .map_err(|e| match e {
+            clearhash_registry::FetchError::BadStatus(status, _) if status.as_u16() == 404 => {
+                InspectError {
+                    status: 404,
+                    message: format!("{name} not found on {ecosystem}"),
+                }
+            }
+            clearhash_registry::FetchError::UnsupportedResolution => InspectError {
+                status: 400,
+                message: format!(
+                    "{ecosystem} doesn't support latest-version resolution — \
+                     include an explicit @<version>"
+                ),
+            },
+            other => InspectError {
+                status: 502,
+                message: format!("could not resolve latest version of {name}: {other}"),
+            },
+        })?;
+
+    Ok((
+        clearhash_core::PackageRef {
+            ecosystem,
+            name: name.to_string(),
+            version,
+        },
+        true,
+    ))
 }
