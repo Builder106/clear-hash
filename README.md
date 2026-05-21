@@ -9,7 +9,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](#license)
 [![Ecosystems](https://img.shields.io/badge/ecosystems-npm%20%7C%20PyPI%20%7C%20Cargo-7c3aed.svg)](#ecosystem-support)
 [![Sigstore](https://img.shields.io/badge/SLSA-Sigstore%20%2B%20Rekor-22c55e.svg)](https://www.sigstore.dev/)
-[![Demo](https://img.shields.io/badge/demo-clearhash.vercel.app-success.svg)](https://clearhash.vercel.app/)
+[![Demo](https://img.shields.io/badge/demo-clear-hash.vercel.app-success.svg)](https://clear-hash.vercel.app/)
 
 > A pre-install gatekeeper that fetches a package, verifies its SLSA attestation through
 > Sigstore + Rekor, rebuilds it from the attested source commit in an isolated Docker
@@ -113,15 +113,15 @@ compares a Merkle root over the resulting file tree.
 ## Try it without installing
 
 A hosted instance of the **inspect** endpoint runs at
-[**clearhash.vercel.app**](https://clearhash.vercel.app). It does the fetch + Sigstore parse +
+[**clear-hash.vercel.app**](https://clear-hash.vercel.app). It does the fetch + Sigstore parse +
 cert-chain validation parts of the pipeline. The full **verify** flow stays in the CLI
 because it needs a Docker daemon.
 
 ```bash
-curl 'https://clearhash.vercel.app/api/inspect?package=npm:sigstore@2.3.1'
+curl 'https://clear-hash.vercel.app/api/inspect?package=npm:sigstore@2.3.1'
 ```
 
-Or paste a package into the form at [`/inspect`](https://clearhash.vercel.app/inspect).
+Or paste a package into the form at [`/inspect`](https://clear-hash.vercel.app/inspect).
 
 ## Install the CLI
 

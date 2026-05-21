@@ -10,3 +10,4 @@ Cargo.lock.bak
 
 # clearhash workdirs
 clearhash-rebuild-*/
+.vercel

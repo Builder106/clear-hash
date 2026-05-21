@@ -241,7 +241,7 @@ clearhash verify npm:sigstore@2.3.1"
                         "Programmatic access to the inspect endpoint:"
                     }
                     pre {
-"$ curl 'https://clearhash.vercel.app/api/inspect?package=npm:sigstore@2.3.1'
+"$ curl 'https://clear-hash.vercel.app/api/inspect?package=npm:sigstore@2.3.1'
 {
   \"package\": \"npm:sigstore@2.3.1\",
   \"registry_sha256\": \"1b5041a35f86125db7f872742502470753fd2e1109521b7dbff8a61d229a03c2\",
