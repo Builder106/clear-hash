@@ -59,6 +59,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build
-        run: cargo build --release --bin clearhash
+        # `--bin clearhash` is ambiguous (both clearhash-cli and clearhash-vercel define a
+        # binary). `-p clearhash-cli` disambiguates by package.
+        run: cargo build --release -p clearhash-cli
       - name: Verify a known-clean attested package
         run: ./target/release/clearhash verify npm:sigstore@2.3.1

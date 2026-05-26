@@ -20,6 +20,8 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
+pub mod simulate_tamper;
+
 use bollard::container::{Config, CreateContainerOptions, LogsOptions, WaitContainerOptions};
 use bollard::image::CreateImageOptions;
 use bollard::Docker;

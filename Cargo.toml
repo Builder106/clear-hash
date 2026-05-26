@@ -31,7 +31,9 @@ tower = "0.5"
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "query"] }
 
 [[bin]]
-name = "clearhash"
+# Renamed to avoid collision with the `clearhash` CLI binary in the workspace.
+# Vercel uses the `path` (api/<file>.rs) for routing, not the bin name.
+name = "clearhash-handler"
 path = "api/clearhash.rs"
 
 [workspace.package]

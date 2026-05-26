@@ -45,14 +45,36 @@ $ clearhash verify npm:sigstore@2.3.1
 ✓ MATCH npm:sigstore@2.3.1 tree-hash ec714016d7e4ce742f9aa23b6f16f19cb967bf82b78c343297013dcc268b107e
 ```
 
-A tampered artifact gets a different ending:
+A tampered artifact gets a different ending. To see what ClearHash actually catches, run
+the verify with `--simulate-tamper`, which deliberately modifies the registry-extracted
+tree before comparison (the underlying tarball from npm is clean — the simulation is
+clearly announced):
 
 ```
-✗ MISMATCH npm:sigstore@2.3.1 — 3 difference(s)
-    ContentDiffers { path: "dist/index.js" }
-    OnlyInRegistry { path: "dist/.evil-payload.js" }
-    ModeDiffers { path: "bin/setup" }
+$ clearhash verify --simulate-tamper npm:sigstore@2.3.1
+⚠ TAMPER SIMULATION · The registry-extracted tree will be modified before comparison (All mode).
+                      The MISMATCH below is real but the registry tarball is clean.
+[1/5] Fetching sigstore from npm
+[2/5] Verifying Sigstore attestation
+[3/5] Spinning up rebuild container (node:20.11.1-bookworm-slim)
+[4/5] Rebuilding from source at commit 46e7056ff991
+[5/5] Comparing file trees
+      · tampered injectedpayload: dist/.clearhash-tamper-demo.js (added a file that the source rebuild did not produce)
+      · tampered contentswap:    dist/index.js                  (appended bytes to an existing file)
+      · tampered modeflip:       dist/index.js                  (flipped the executable bit)
+      · tampered deletion:       README.md                       (removed a file)
+
+✗ MISMATCH npm:sigstore@2.3.1 — 4 difference(s)
+    OnlyInRegistry  { path: "dist/.clearhash-tamper-demo.js" }
+    ContentDiffers  { path: "dist/index.js" }
+    ModeDiffers     { path: "dist/index.js" }
+    OnlyInRebuild   { path: "README.md" }
 ```
+
+The four tamper modes (`injected-payload`, `content-swap`, `mode-flip`, `deletion`, or
+`all`) each surface a different diff category. Useful for demos, screenshots, and writing
+integration tests against the diff-rendering paths without needing an actual malicious
+package.
 
 ### Live demos
 
@@ -153,6 +175,11 @@ clearhash verify --allow-unattested cargo:serde@1.0.197
 
 # Keep the workdir to inspect a mismatch
 clearhash verify npm:foo@1.0.0 --keep-workdir
+
+# Demo: deliberately tamper with the extracted registry tree so the diff is non-empty.
+# (Output is clearly marked as a simulation; the npm tarball is clean.)
+clearhash verify --simulate-tamper npm:sigstore@2.3.1
+clearhash verify --simulate-tamper=content-swap npm:sigstore@2.3.1
 ```
 
 ### Exit codes

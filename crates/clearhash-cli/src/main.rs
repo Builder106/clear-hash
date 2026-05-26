@@ -4,9 +4,10 @@ use std::process::ExitCode;
 use std::str::FromStr;
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use clearhash_core::{hex_digest, PackageRef};
 use clearhash_ecosystems::for_ecosystem;
+use clearhash_sandbox::simulate_tamper::TamperMode;
 use console::{style, Term};
 
 #[derive(Parser)]
@@ -45,6 +46,18 @@ enum Cmd {
         /// Output machine-readable JSON instead of human text.
         #[arg(long)]
         json: bool,
+
+        /// Demo mode: deliberately tamper with the registry-extracted tree before comparison
+        /// so the diff output is non-empty. The output is clearly marked as a simulation.
+        /// Usage: `--simulate-tamper` (defaults to `all`) or `--simulate-tamper=content-swap`.
+        #[arg(
+            long,
+            value_enum,
+            num_args = 0..=1,
+            default_missing_value = "all",
+            require_equals = true
+        )]
+        simulate_tamper: Option<TamperModeArg>,
     },
 
     /// Fetch a package and report the SHA-256 + attestation summary without rebuilding.
@@ -55,6 +68,29 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+}
+
+/// Clap-friendly mirror of `clearhash_sandbox::simulate_tamper::TamperMode`.
+/// Kept separate so the CLI owns its kebab-case spellings.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum TamperModeArg {
+    InjectedPayload,
+    ContentSwap,
+    ModeFlip,
+    Deletion,
+    All,
+}
+
+impl From<TamperModeArg> for TamperMode {
+    fn from(a: TamperModeArg) -> Self {
+        match a {
+            TamperModeArg::InjectedPayload => TamperMode::InjectedPayload,
+            TamperModeArg::ContentSwap => TamperMode::ContentSwap,
+            TamperModeArg::ModeFlip => TamperMode::ModeFlip,
+            TamperModeArg::Deletion => TamperMode::Deletion,
+            TamperModeArg::All => TamperMode::All,
+        }
+    }
 }
 
 #[tokio::main]
@@ -75,7 +111,17 @@ async fn main() -> ExitCode {
             allow_unattested,
             keep_workdir,
             json,
-        } => run_verify(&package, allow_unattested, keep_workdir, json).await,
+            simulate_tamper,
+        } => {
+            run_verify(
+                &package,
+                allow_unattested,
+                keep_workdir,
+                json,
+                simulate_tamper.map(TamperMode::from),
+            )
+            .await
+        }
     };
 
     match exit {
@@ -168,10 +214,21 @@ async fn run_verify(
     allow_unattested: bool,
     keep_workdir: bool,
     json: bool,
+    simulate_tamper: Option<TamperMode>,
 ) -> Result<i32> {
     let pkg = PackageRef::from_str(package).context("parsing package reference")?;
     let adapter = for_ecosystem(pkg.ecosystem);
     let term = Term::stderr();
+
+    if let Some(mode) = simulate_tamper {
+        let _ = term.write_line(&format!(
+            "{} {} The registry-extracted tree will be modified before comparison ({:?} mode). \
+             The MISMATCH below is real but the registry tarball is clean.",
+            style("⚠ TAMPER SIMULATION").yellow().bold(),
+            style("·").dim(),
+            mode
+        ));
+    }
 
     // --- [1/5] Fetch ---
     let _ = term.write_line(&format!(
@@ -268,6 +325,22 @@ async fn run_verify(
         &workdir_path.join("rebuild"),
     )
     .context("extracting rebuilt artifact")?;
+
+    // Demo-only: apply real modifications to the registry tree so the diff is non-empty.
+    if let Some(mode) = simulate_tamper {
+        let applied = clearhash_sandbox::simulate_tamper::apply(&reg_root, mode)
+            .context("simulating tamper")?;
+        for t in &applied {
+            let _ = term.write_line(&format!(
+                "      {} tampered {}: {} ({})",
+                style("·").yellow(),
+                format!("{:?}", t.mode).to_lowercase(),
+                style(&t.path).cyan(),
+                t.detail
+            ));
+        }
+    }
+
     let outcome = clearhash_sandbox::compare_trees(&*adapter, &reg_root, &rb_root)
         .context("comparing trees")?;
 
