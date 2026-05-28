@@ -745,15 +745,15 @@ pub async fn landing() -> Markup {
                     }
 
                     pre.log style="margin-top:1rem;" {
-"  " (PreEscaped("<span class=\"dim\">[1/5]</span> Fetching <span class=\"bold\">sigstore</span> from <span class=\"link\">npm</span>\n"))
-"        sha256: " (PreEscaped("<span class=\"dim\">1b5041a35f86125db7f872742502470753fd2e1109521b7dbff8a61d229a03c2</span>\n"))
-"  " (PreEscaped("<span class=\"dim\">[2/5]</span> Verifying Sigstore attestation\n"))
-"        " (PreEscaped("<span class=\"warn\">WARN</span> clearhash_provenance: provenance: validated\n"))
-"        commit: " (PreEscaped("<span class=\"link\">46e7056ff991</span>  (<span class=\"dim\">workflow: github.com/sigstore/sigstore-js/.github/workflows/release.yml@refs/heads/main</span>)\n"))
-"  " (PreEscaped("<span class=\"dim\">[3/5]</span> Spinning up rebuild container (<span class=\"bold\">node:20.11.1-bookworm-slim</span>)\n"))
-"  " (PreEscaped("<span class=\"dim\">[4/5]</span> Rebuilding from source at commit <span class=\"link\">46e7056ff991</span>\n"))
-"  " (PreEscaped("<span class=\"dim\">[5/5]</span> Comparing file trees\n\n"))
-"  " (PreEscaped("<span class=\"ok\">✓ MATCH</span> npm:sigstore@2.3.1 tree-hash <span class=\"dim\">ec714016d7e4ce742f9aa23b6f16f19cb967bf82</span>"))
+        "  " (PreEscaped("<span class=\"dim\">[1/5]</span> Fetching <span class=\"bold\">sigstore</span> from <span class=\"link\">npm</span>\n"))
+        "        sha256: " (PreEscaped("<span class=\"dim\">1b5041a35f86125db7f872742502470753fd2e1109521b7dbff8a61d229a03c2</span>\n"))
+        "  " (PreEscaped("<span class=\"dim\">[2/5]</span> Verifying Sigstore attestation\n"))
+        "        " (PreEscaped("<span class=\"warn\">WARN</span> clearhash_provenance: provenance: validated\n"))
+        "        commit: " (PreEscaped("<span class=\"link\">46e7056ff991</span>  (<span class=\"dim\">workflow: github.com/sigstore/sigstore-js/.github/workflows/release.yml@refs/heads/main</span>)\n"))
+        "  " (PreEscaped("<span class=\"dim\">[3/5]</span> Spinning up rebuild container (<span class=\"bold\">node:20.11.1-bookworm-slim</span>)\n"))
+        "  " (PreEscaped("<span class=\"dim\">[4/5]</span> Rebuilding from source at commit <span class=\"link\">46e7056ff991</span>\n"))
+        "  " (PreEscaped("<span class=\"dim\">[5/5]</span> Comparing file trees\n\n"))
+        "  " (PreEscaped("<span class=\"ok\">✓ MATCH</span> npm:sigstore@2.3.1 tree-hash <span class=\"dim\">ec714016d7e4ce742f9aa23b6f16f19cb967bf82</span>"))
                     }
                 }
 
@@ -824,10 +824,10 @@ pub async fn landing() -> Markup {
                         }
                     }
                     pre.log style="padding-left:2.2em;" {
-"  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">git</span> clone https://github.com/Builder106/ClearHash.git\n"))
-"  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">cd</span> ClearHash\n"))
-"  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">cargo</span> install --path crates/clearhash-cli\n\n"))
-"  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">clearhash</span> verify <span class=\"link\">npm:sigstore@2.3.1</span>"))
+        "  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">git</span> clone https://github.com/Builder106/ClearHash.git\n"))
+        "  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">cd</span> ClearHash\n"))
+        "  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">cargo</span> install --path crates/clearhash-cli\n\n"))
+        "  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">clearhash</span> verify <span class=\"link\">npm:sigstore@2.3.1</span>"))
                     }
                 }
 
@@ -839,19 +839,19 @@ pub async fn landing() -> Markup {
                         p { "Programmatic access to the inspect endpoint:" }
                     }
                     pre.log style="padding-left:2.2em;" {
-"  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">curl</span> '<span class=\"link\">https://clear-hash.vercel.app/api/inspect?package=npm:sigstore@2.3.1</span>'\n"))
-"  {\n"
-"    \"package\": \"npm:sigstore@2.3.1\",\n"
-"    \"registry_sha256\": " (PreEscaped("<span class=\"dim\">\"1b5041a35f86125db7f872742502470753fd2e1109521b7dbff8a61d229a03c2\"</span>")) ",\n"
-"    \"attestation\": {\n"
-"      \"source_repo\": " (PreEscaped("<span class=\"link\">\"git+https://github.com/sigstore/sigstore-js@refs/heads/main\"</span>")) ",\n"
-"      \"commit_sha\": " (PreEscaped("<span class=\"link\">\"46e7056ff9912ebfee5298d94024895a9fea76c0\"</span>")) ",\n"
-"      \"builder_id\": \"https://github.com/actions/runner/github-hosted\",\n"
-"      \"issuer_dn\": \"O=sigstore.dev, CN=sigstore-intermediate\",\n"
-"      \"workflow_uri\": " (PreEscaped("<span class=\"link\">\"https://github.com/sigstore/sigstore-js/.github/workflows/release.yml@refs/heads/main\"</span>")) ",\n"
-"      \"rekor_log_index\": 94408136\n"
-"    }\n"
-"  }"
+        "  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">curl</span> '<span class=\"link\">https://clear-hash.vercel.app/api/inspect?package=npm:sigstore@2.3.1</span>'\n"))
+        "  {\n"
+        "    \"package\": \"npm:sigstore@2.3.1\",\n"
+        "    \"registry_sha256\": " (PreEscaped("<span class=\"dim\">\"1b5041a35f86125db7f872742502470753fd2e1109521b7dbff8a61d229a03c2\"</span>")) ",\n"
+        "    \"attestation\": {\n"
+        "      \"source_repo\": " (PreEscaped("<span class=\"link\">\"git+https://github.com/sigstore/sigstore-js@refs/heads/main\"</span>")) ",\n"
+        "      \"commit_sha\": " (PreEscaped("<span class=\"link\">\"46e7056ff9912ebfee5298d94024895a9fea76c0\"</span>")) ",\n"
+        "      \"builder_id\": \"https://github.com/actions/runner/github-hosted\",\n"
+        "      \"issuer_dn\": \"O=sigstore.dev, CN=sigstore-intermediate\",\n"
+        "      \"workflow_uri\": " (PreEscaped("<span class=\"link\">\"https://github.com/sigstore/sigstore-js/.github/workflows/release.yml@refs/heads/main\"</span>")) ",\n"
+        "      \"rekor_log_index\": 94408136\n"
+        "    }\n"
+        "  }"
                     }
                     div.body style="margin-top:0.8rem;" {
                         p class="dim" {
