@@ -1,10 +1,12 @@
 //! Server-rendered HTML. maud DSL — no template files, no build pipeline.
 //!
-//! Visual direction: **the forensic dossier**.  Bone-white paper, ink black,
-//! cinnabar red for tamper/mismatch and sage green for a verified match — the
-//! palette of an evidence binder, not a SaaS dashboard.  Hash strings, commit
-//! SHAs, and registry digests are treated as evidence labels: monospace, grouped
-//! every four hexits, framed with hairline rules.
+//! Visual direction: **hacker terminal**.  The entire page reads as one long
+//! terminal session — Homebrew-style `==>` markers in phosphor green, bold
+//! white for package names and emphasis, yellow Warning: lines, cyan for
+//! URLs and paths, red for tamper / mismatch.  Single monospace face
+//! (JetBrains Mono) throughout; faint CRT scanlines + a subtle phosphor
+//! glow.  Forms render as command prompts; verdicts as `[ OK ]` /
+//! `[WARN]` / `[FAIL]` status badges.
 
 use maud::{html, Markup, PreEscaped, DOCTYPE};
 
@@ -15,748 +17,581 @@ use super::{InspectError, InspectResult};
 /// loaded in the document head.
 const STYLES: &str = r#"
 :root {
-    color-scheme: light dark;
+    color-scheme: dark;
 
-    /* Dossier paper — warm bone-white with a faint sepia drift. */
-    --paper: #f5f2ea;
-    --paper-shade: #ebe6d7;
-    --paper-edge: #d8d1bd;
-    --ink: #161311;
-    --ink-soft: #4a423b;
-    --ink-faint: #6c6357;
-    --hairline: #c9c0ac;
-    --rule: #1c1916;
+    /* Terminal palette — phosphor green on warm black, with the Homebrew
+     * convention of bold-white package names against `==>` green arrows. */
+    --bg: #0a0e0a;
+    --bg-elev: #11151a;
+    --bg-prompt: #1a1f1f;
 
-    /* Signal palette — used sparingly, always with intent. */
-    --cinnabar: #b32820;      /* tamper / mismatch */
-    --cinnabar-deep: #7a1812;
-    --sage: #4d6b3a;          /* verified / match */
-    --sage-deep: #324822;
-    --amber: #a87325;         /* caution / no attestation */
-    --amber-deep: #6e4a14;
+    --fg: #e8eaed;
+    --fg-dim: #8b938b;
+    --fg-deep: #5a5f5a;
 
-    /* Highlight stripes — like a marker pass across a page. */
-    --marker-yellow: rgba(255, 220, 60, 0.28);
-    --marker-blue: rgba(60, 110, 175, 0.16);
-}
-
-@media (prefers-color-scheme: dark) {
-    :root {
-        /* Carbon-copy fallback for users who insist on dark mode. */
-        --paper: #131210;
-        --paper-shade: #1a1815;
-        --paper-edge: #2a2620;
-        --ink: #efeadc;
-        --ink-soft: #b8b09f;
-        --ink-faint: #8a8273;
-        --hairline: #3a342a;
-        --rule: #efeadc;
-
-        --cinnabar: #e16156;
-        --cinnabar-deep: #b3382b;
-        --sage: #9bbb7a;
-        --sage-deep: #6b8a4f;
-        --amber: #d4a25a;
-        --amber-deep: #a87325;
-
-        --marker-yellow: rgba(255, 220, 60, 0.14);
-        --marker-blue: rgba(120, 170, 230, 0.10);
-    }
+    --prompt: #5eff8b;        /* the $ prompt and ==> arrows */
+    --prompt-deep: #3ee072;
+    --bold: #ffffff;           /* bold white emphasis */
+    --link: #7dd3fc;           /* cyan for paths + URLs */
+    --warn: #f1c40f;           /* Warning: yellow */
+    --err: #ff5555;            /* error / tamper red */
+    --ok: #50fa7b;             /* pass / verified green */
+    --rule: #1f2522;
 }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 
 body {
-    font-family: "Geist", "Inter Tight", system-ui, sans-serif;
-    background: var(--paper);
-    color: var(--ink);
-    line-height: 1.6;
+    font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 14px;
+    line-height: 1.55;
+    background: var(--bg);
+    color: var(--fg);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
-    font-feature-settings: "ss01", "cv11";
+    font-feature-settings: "calt", "ss20";
 
-    /* Subtle paper grain — a single fixed SVG noise layer. */
+    /* CRT scanlines — a 3px horizontal stripe pattern, intentionally faint
+     * so it never interferes with reading.  Fixed so it doesn't move with
+     * scroll.  Phosphor green tint at extremely low alpha. */
     background-image:
-        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='280' height='280'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='1' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.55  0 0 0 0 0.50  0 0 0 0 0.40  0 0 0 0.05 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
-    background-attachment: fixed;
-    background-size: 280px 280px;
+        repeating-linear-gradient(
+            to bottom,
+            rgba(94, 255, 139, 0.018) 0px,
+            rgba(94, 255, 139, 0.018) 1px,
+            transparent 1px,
+            transparent 3px
+        ),
+        /* corner phosphor wash — top-left, simulating an old CRT glow */
+        radial-gradient(
+            70% 50% at 0% 0%,
+            rgba(94, 255, 139, 0.045) 0%,
+            transparent 60%
+        );
+    background-attachment: fixed, fixed;
+    background-size: 100% 3px, 100% 100%;
 }
 
 ::selection {
-    background: var(--marker-yellow);
-    color: var(--ink);
+    background: var(--prompt);
+    color: var(--bg);
 }
 
-/* Layout container — narrower than the AI-default 1200px; reads like a single
- * column of evidence rather than a marketing grid. */
+/* Phosphor glow on the highest-contrast prompts only — used sparingly so
+ * the text doesn't blur the rest of the time. */
+.glow {
+    text-shadow: 0 0 6px rgba(94, 255, 139, 0.55), 0 0 14px rgba(94, 255, 139, 0.25);
+}
+
+/* ============== TYPOGRAPHIC TOKENS ============== */
+
+.prompt { color: var(--prompt); }
+.bold { color: var(--bold); font-weight: 700; }
+.dim { color: var(--fg-dim); }
+.dimmer { color: var(--fg-deep); }
+.link { color: var(--link); }
+.warn { color: var(--warn); }
+.err  { color: var(--err); }
+.ok   { color: var(--ok); }
+.under { text-decoration: underline; text-decoration-color: var(--fg-deep); }
+
+/* Inline link styling — keep the underline; tint cyan on hover. */
+a {
+    color: var(--link);
+    text-decoration: underline;
+    text-decoration-color: rgba(125, 211, 252, 0.4);
+    text-underline-offset: 3px;
+}
+a:hover {
+    color: var(--prompt);
+    text-decoration-color: var(--prompt);
+}
+
+/* Container — 80ch is the canonical terminal width.  No centered marketing
+ * grid; the page reads like a single column of `man` output. */
 .wrap {
-    max-width: 1080px;
+    max-width: 86ch;
     margin: 0 auto;
     padding: 0 1.5rem;
 }
 
-/* ============== TYPOGRAPHY ============== */
+/* ============== HEADER (tmux-style status bar) ============== */
 
-.serif {
-    font-family: "Newsreader", "Source Serif 4", Georgia, serif;
-    font-feature-settings: "ss01", "lnum";
-    font-optical-sizing: auto;
+header.bar {
+    border-bottom: 1px solid var(--rule);
+    background: var(--bg);
+    position: sticky;
+    top: 0;
+    z-index: 30;
 }
-
-.display {
-    font-family: "Newsreader", "Source Serif 4", Georgia, serif;
-    font-weight: 500;
-    font-optical-sizing: auto;
-    font-variation-settings: "opsz" 144;
-    letter-spacing: -0.018em;
-    line-height: 1.02;
-}
-
-.display .accent-italic {
-    font-style: italic;
-    font-weight: 400;
-    color: var(--ink);
-    background-image: linear-gradient(to top, var(--marker-yellow) 0%, var(--marker-yellow) 32%, transparent 32%);
-    padding: 0 0.18em;
-}
-
-.mono {
-    font-family: "JetBrains Mono", "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
-    font-feature-settings: "ss20", "calt";
-}
-
-.tabular { font-variant-numeric: tabular-nums; }
-.uppercase { text-transform: uppercase; }
-
-.case-label {
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    font-size: 0.68rem;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
-}
-
-/* ============== HEADER (the case-file slip) ============== */
-
-header.dossier {
-    border-bottom: 1px solid var(--ink);
-    background:
-        linear-gradient(to bottom, var(--paper) 0%, var(--paper) 90%, var(--paper-shade) 100%);
-}
-header.dossier .wrap {
+header.bar .wrap {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 1.2rem 1.5rem;
-    gap: 1.5rem;
+    padding: 0.55rem 1.5rem;
+    font-size: 12px;
+    gap: 1rem;
     flex-wrap: wrap;
 }
-
-.brand {
-    font-family: "Newsreader", serif;
-    font-weight: 600;
-    font-size: 1.25rem;
-    letter-spacing: -0.01em;
-    color: var(--ink);
-    text-decoration: none;
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.05em;
-}
-.brand .crosshatch { color: var(--cinnabar); font-style: italic; }
-.brand:hover .crosshatch { color: var(--cinnabar-deep); }
-
-nav.dossier-nav {
+header.bar .lhs {
     display: flex;
     align-items: center;
-    gap: 1.6rem;
-    font-size: 0.85rem;
+    gap: 1rem;
 }
-nav.dossier-nav a {
-    color: var(--ink-soft);
-    text-decoration: none;
-    border-bottom: 1px solid transparent;
-    padding-bottom: 2px;
+header.bar .traffic {
+    display: inline-flex;
+    gap: 0.4rem;
 }
-nav.dossier-nav a:hover {
-    color: var(--ink);
-    border-bottom-color: var(--cinnabar);
+header.bar .traffic span {
+    width: 9px; height: 9px; border-radius: 50%;
+    display: inline-block;
+    background: var(--fg-deep);
+}
+header.bar .traffic span:nth-child(1) { background: #ff5f56; }
+header.bar .traffic span:nth-child(2) { background: #ffbd2e; }
+header.bar .traffic span:nth-child(3) { background: #27c93f; }
+header.bar .ses { color: var(--fg-dim); }
+header.bar .ses b { color: var(--fg); font-weight: 500; }
+header.bar nav { display: flex; gap: 1.25rem; }
+header.bar nav a { color: var(--fg-dim); text-decoration: none; }
+header.bar nav a:hover { color: var(--prompt); }
+
+/* ============== ASCII BANNER ============== */
+
+pre.banner {
+    font-family: inherit;
+    margin: 2.5rem 0 0.5rem;
+    color: var(--prompt);
+    line-height: 1.1;
+    /* Scales aggressively at narrow widths so the 75-char banner fits an
+     * iPhone-class viewport without clipping; capped at 0.95rem on wide. */
+    font-size: clamp(0.42rem, 1.55vw, 0.95rem);
+    white-space: pre;
+    overflow-x: auto;
+    text-shadow: 0 0 6px rgba(94, 255, 139, 0.45), 0 0 14px rgba(94, 255, 139, 0.22);
+}
+@media (max-width: 480px) {
+    pre.banner { font-size: 0.46rem; }
 }
 
-/* ============== CASE STRIP — perforated metadata bar ============== */
+/* ============== BREW-STYLE OUTPUT BLOCK ============== */
 
-.case-strip {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0;
-    border-top: 1px solid var(--ink);
-    border-bottom: 1px solid var(--ink);
-    background: var(--paper-shade);
-    margin-top: 2.5rem;
+/* The whole page is rendered as a stream of these blocks.  Each opens
+ * with `==>` (green) followed by a heading (bold white), then indented
+ * body copy underneath. */
+.block {
+    margin: 1.8rem 0;
 }
-@media (min-width: 720px) {
-    .case-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
-.case-strip > div {
-    padding: 0.9rem 1.2rem;
-    border-right: 1px dashed var(--hairline);
-    border-bottom: 1px dashed var(--hairline);
-}
-/* On the 2-column mobile layout, the bottom row carries no bottom border. */
-.case-strip > div:nth-last-child(-n+2) { border-bottom: 0; }
-.case-strip > div:nth-child(2n) { border-right: 0; }
-@media (min-width: 720px) {
-    .case-strip > div { border-bottom: 0; }
-    .case-strip > div:nth-child(2n) { border-right: 1px dashed var(--hairline); }
-    .case-strip > div:last-child { border-right: 0; }
-}
-.case-strip dt {
-    font-family: "JetBrains Mono", monospace;
-    font-size: 0.62rem;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
-    margin: 0 0 0.3rem;
-}
-.case-strip dd {
-    margin: 0;
-    font-family: "JetBrains Mono", monospace;
-    font-size: 0.86rem;
-    color: var(--ink);
-    font-feature-settings: "tnum", "calt";
-}
-
-/* ============== HERO ============== */
-
-.hero { padding: 5.5rem 0 4rem; }
-.hero h1 {
-    margin: 0 0 1.8rem;
-    font-family: "Newsreader", serif;
-    font-weight: 500;
-    font-size: clamp(2.6rem, 6.5vw, 5.2rem);
-    line-height: 1.02;
-    letter-spacing: -0.022em;
-    font-variation-settings: "opsz" 144;
-    color: var(--ink);
-}
-.hero h1 .accent-italic {
-    font-style: italic;
-    font-weight: 400;
-    background-image: linear-gradient(to top, var(--marker-yellow) 0%, var(--marker-yellow) 36%, transparent 36%);
-    padding: 0 0.15em;
-}
-.hero p.lede {
-    font-size: 1.125rem;
-    line-height: 1.65;
-    color: var(--ink-soft);
-    max-width: 38rem;
-    margin: 0 0 2rem;
-}
-
-/* Examiner-signed stamp — a circular evidence seal. */
-.stamp {
-    position: absolute;
-    top: 1rem;
-    right: 0;
-    width: 9.5rem;
-    height: 9.5rem;
-    transform: rotate(-7deg);
-    pointer-events: none;
-}
-.stamp svg { width: 100%; height: 100%; }
-.stamp text {
-    fill: var(--cinnabar);
-    font-family: "JetBrains Mono", monospace;
+.block .arrow {
+    color: var(--prompt);
     font-weight: 700;
-    letter-spacing: 0.12em;
+    margin-right: 0.5em;
 }
-@media (max-width: 900px) {
-    .stamp { display: none; }
+.block h2 {
+    display: inline;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--bold);
+    letter-spacing: 0;
+    margin: 0;
+}
+.block h2 .sub {
+    color: var(--fg-dim);
+    font-weight: 400;
+    margin-left: 0.5em;
+}
+.block .body {
+    margin: 0.65rem 0 0;
+    padding-left: 2.2em;
+    color: var(--fg);
+}
+.block .body p { margin: 0 0 0.65rem; }
+.block .body p:last-child { margin-bottom: 0; }
+
+/* The hero block uses a slightly larger heading for the headline. */
+.block.hero h2 {
+    font-size: 1.2rem;
+}
+.block.hero h2 strong {
+    color: var(--prompt);
+    font-weight: 700;
 }
 
-.hero-row {
-    position: relative;
+/* ============== HEADER METADATA STRIP ============== */
+/* A pseudo brew-cask "info" output — the case metadata. */
+
+.info-strip {
+    margin-top: 1.5rem;
+    padding-left: 2.2em;
+    color: var(--fg-dim);
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: max-content 1fr;
+    column-gap: 1.5rem;
+    row-gap: 0.15rem;
+    font-size: 13px;
 }
+.info-strip dt {
+    color: var(--fg-dim);
+}
+.info-strip dd {
+    color: var(--fg);
+    margin: 0;
+}
+
+/* ============== CTA BUTTONS — bracketed commands ============== */
 
 .cta {
     display: flex;
-    gap: 0.75rem;
+    gap: 1rem;
     flex-wrap: wrap;
-    margin-top: 1.6rem;
+    margin-top: 1rem;
+    padding-left: 2.2em;
 }
-.btn {
+a.btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.7rem 1.2rem;
-    border-radius: 0;
-    font-family: "JetBrains Mono", monospace;
-    font-size: 0.78rem;
-    font-weight: 600;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+    gap: 0.4em;
+    padding: 0.45rem 0.9rem;
+    font-family: inherit;
+    font-size: 13px;
     text-decoration: none;
-    transition: transform 120ms ease, background-color 120ms ease;
-    border: 1px solid var(--ink);
-}
-.btn.primary {
-    background: var(--ink);
-    color: var(--paper);
-}
-.btn.primary:hover {
-    background: var(--cinnabar);
-    border-color: var(--cinnabar);
-    transform: translateY(-1px);
-}
-.btn.secondary {
+    border: 1px solid var(--prompt);
+    color: var(--prompt);
     background: transparent;
-    color: var(--ink);
+    transition: background 100ms ease, color 100ms ease;
 }
-.btn.secondary:hover {
-    background: var(--ink);
-    color: var(--paper);
-    transform: translateY(-1px);
+a.btn:hover {
+    background: var(--prompt);
+    color: var(--bg);
+    text-decoration: none;
 }
-
-/* ============== SECTION CONVENTION ============== */
-
-section {
-    padding: 3.5rem 0;
-    border-top: 1px solid var(--hairline);
-    position: relative;
+a.btn.dim {
+    border-color: var(--fg-deep);
+    color: var(--fg-dim);
 }
-section .section-mark {
-    display: flex;
-    align-items: baseline;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-}
-section .section-mark .num {
-    font-family: "JetBrains Mono", monospace;
-    font-size: 0.7rem;
-    color: var(--cinnabar);
-    letter-spacing: 0.22em;
-}
-section .section-mark .ttl {
-    font-family: "JetBrains Mono", monospace;
-    font-size: 0.7rem;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
-}
-section .section-mark .rule {
-    flex: 1;
-    height: 1px;
-    background: var(--hairline);
+a.btn.dim:hover {
+    background: var(--fg-dim);
+    color: var(--bg);
+    border-color: var(--fg-dim);
 }
 
-section h2 {
-    font-family: "Newsreader", serif;
-    font-weight: 500;
-    font-variation-settings: "opsz" 80;
-    font-size: clamp(1.8rem, 3.4vw, 2.6rem);
-    margin: 0 0 1rem;
-    letter-spacing: -0.015em;
-    color: var(--ink);
-    max-width: 36rem;
-}
-section h2 em {
-    font-style: italic;
-    font-weight: 400;
-}
-section p {
-    color: var(--ink-soft);
-    max-width: 38rem;
-    margin: 0 0 1rem;
-    font-size: 1.025rem;
-    line-height: 1.65;
-}
+/* ============== CODE / LOG BLOCKS ============== */
 
-/* ============== EVIDENCE CARDS (replaces feature grid) ============== */
-
-.evidence {
-    display: grid;
-    gap: 0;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    margin-top: 2.5rem;
-    border: 1px solid var(--ink);
-    background: var(--paper);
-}
-.evidence article {
-    padding: 1.6rem 1.4rem 1.8rem;
-    position: relative;
-    border-right: 1px solid var(--hairline);
-}
-.evidence article:last-child { border-right: 0; }
-
-.evidence article .file-no {
-    font-family: "JetBrains Mono", monospace;
-    font-size: 0.62rem;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    color: var(--cinnabar);
-    margin-bottom: 0.6rem;
-}
-.evidence article h3 {
-    font-family: "Newsreader", serif;
-    font-weight: 600;
-    font-size: 1.15rem;
-    margin: 0 0 0.5rem;
-    color: var(--ink);
-}
-.evidence article p {
-    font-size: 0.92rem;
-    color: var(--ink-soft);
-    line-height: 1.55;
-    margin: 0;
-}
-.evidence article .specimen {
-    margin-top: 1rem;
-    font-family: "JetBrains Mono", monospace;
-    font-size: 0.72rem;
-    color: var(--ink-faint);
+/* Indented log block — appears under the section body, presented as the
+ * actual command's stdout.  No box, no border — just the lines themselves. */
+pre.log {
+    margin: 0.6rem 0 0 0;
+    padding: 0;
+    font-family: inherit;
+    font-size: 13px;
     line-height: 1.7;
-    padding-top: 0.8rem;
-    border-top: 1px dashed var(--hairline);
-}
-
-/* Cardboard tape — a sage strip across the top of one card. */
-.evidence article.tape::before {
-    content: "";
-    position: absolute;
-    top: -1px;
-    left: 1rem;
-    right: 1rem;
-    height: 6px;
-    background: var(--sage);
-    opacity: 0.7;
-}
-.evidence article.tape.red::before { background: var(--cinnabar); }
-.evidence article.tape.amber::before { background: var(--amber); }
-
-/* ============== FIELD-LAB CODE BLOCK ============== */
-
-pre.field-log {
-    background: var(--paper-shade);
-    border: 1px solid var(--ink);
-    border-left: 4px solid var(--cinnabar);
-    padding: 1.25rem 1.5rem;
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    font-size: 0.84rem;
-    line-height: 1.7;
+    color: var(--fg);
+    white-space: pre;
     overflow-x: auto;
-    color: var(--ink);
-    border-radius: 0;
-    margin: 1.5rem 0;
-    position: relative;
+    background: transparent;
 }
-pre.field-log::before {
-    /* Lab notebook tab — green PASS strip at top corner. */
-    content: "OBSERVED";
-    position: absolute;
-    top: -1px;
-    right: -1px;
-    background: var(--sage-deep);
-    color: var(--paper);
-    font-size: 0.6rem;
-    letter-spacing: 0.18em;
-    padding: 0.3rem 0.7rem;
-    font-weight: 700;
-}
-.field-log .dim { color: var(--ink-faint); }
-.field-log .red { color: var(--cinnabar); }
-.field-log .green { color: var(--sage); }
+pre.log .arrow { color: var(--prompt); font-weight: 700; }
+pre.log .dim { color: var(--fg-dim); }
+pre.log .ok  { color: var(--ok); }
+pre.log .err { color: var(--err); }
+pre.log .warn { color: var(--warn); }
+pre.log .bold { color: var(--bold); font-weight: 700; }
+pre.log .link { color: var(--link); }
 
-code.inline {
-    font-family: "JetBrains Mono", monospace;
-    font-size: 0.85em;
-    background: var(--paper-shade);
-    padding: 0.15em 0.45em;
-    border: 1px solid var(--hairline);
-    border-radius: 0;
-    color: var(--ink);
+/* Inline code — appears in prose, gets a small chip background. */
+code.inl {
+    font-family: inherit;
+    color: var(--prompt-deep);
+    background: var(--bg-elev);
+    padding: 0.05em 0.4em;
+    border: 1px solid var(--rule);
+    font-size: 0.92em;
 }
 
-/* ============== INSPECT FORM ============== */
+/* ============== INSPECT FORM (the prompt) ============== */
 
-form.inspect {
-    display: flex;
-    gap: 0;
-    margin: 1.5rem 0 1rem;
-    flex-wrap: wrap;
-    border: 1px solid var(--ink);
-    background: var(--paper);
-    align-items: stretch;
-}
-form.inspect .specimen-tag {
-    background: var(--ink);
-    color: var(--paper);
-    padding: 0.95rem 1.2rem;
-    font-family: "JetBrains Mono", monospace;
-    font-size: 0.7rem;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
+form.prompt-form {
+    margin: 0.6rem 0 0;
+    padding-left: 2.2em;
     display: flex;
     align-items: center;
+    gap: 0.5em;
+    font-family: inherit;
+    font-size: 14px;
+    flex-wrap: wrap;
+}
+form.prompt-form .ps {
+    color: var(--prompt);
+    user-select: none;
     flex-shrink: 0;
 }
-form.inspect input[type="text"] {
+form.prompt-form .cmd {
+    color: var(--bold);
+    font-weight: 700;
+    flex-shrink: 0;
+}
+form.prompt-form input[type="text"] {
     flex: 1;
     min-width: 220px;
-    background: var(--paper);
+    background: transparent;
     border: 0;
-    color: var(--ink);
-    padding: 0.9rem 1.1rem;
-    font-family: "JetBrains Mono", monospace;
-    font-size: 0.95rem;
+    border-bottom: 1px solid var(--fg-deep);
+    color: var(--fg);
+    font-family: inherit;
+    font-size: 14px;
+    padding: 0.2rem 0;
     outline: 0;
+    caret-color: var(--prompt);
 }
-form.inspect input[type="text"]::placeholder {
-    color: var(--ink-faint);
+form.prompt-form input[type="text"]::placeholder {
+    color: var(--fg-deep);
 }
-form.inspect input[type="text"]:focus {
-    background: var(--marker-yellow);
+form.prompt-form input[type="text"]:focus {
+    border-bottom-color: var(--prompt);
+    color: var(--bold);
 }
-form.inspect button {
-    background: var(--cinnabar);
-    color: var(--paper);
-    border: 0;
-    padding: 0.9rem 1.4rem;
-    font-family: "JetBrains Mono", monospace;
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
+form.prompt-form button {
+    background: transparent;
+    border: 1px solid var(--prompt);
+    color: var(--prompt);
+    font-family: inherit;
+    font-size: 12px;
+    padding: 0.25rem 0.65rem;
     cursor: pointer;
-    border-left: 1px solid var(--ink);
+    flex-shrink: 0;
+    transition: background 100ms ease, color 100ms ease;
 }
-form.inspect button:hover {
-    background: var(--cinnabar-deep);
+form.prompt-form button:hover {
+    background: var(--prompt);
+    color: var(--bg);
+}
+/* A blinking cursor block that follows the input — gives the prompt a
+ * live-terminal feel even before the user starts typing. */
+form.prompt-form .caret {
+    display: inline-block;
+    width: 0.55em;
+    height: 1.05em;
+    background: var(--prompt);
+    margin-left: -0.4em;
+    animation: caret-blink 1.05s steps(2) infinite;
+    transform: translateY(0.15em);
+    flex-shrink: 0;
+}
+@keyframes caret-blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
 }
 
 .example-pills {
+    margin: 0.45rem 0 1rem;
+    padding-left: 2.2em;
+    font-size: 12px;
+    color: var(--fg-dim);
     display: flex;
-    gap: 0.4rem;
     flex-wrap: wrap;
-    margin: 0 0 2rem;
-    font-size: 0.78rem;
+    gap: 0.4rem 1rem;
+    align-items: baseline;
 }
-.example-pills .label {
-    font-family: "JetBrains Mono", monospace;
-    font-size: 0.62rem;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
-    align-self: center;
-    margin-right: 0.5rem;
-}
+.example-pills .label { color: var(--fg-dim); }
 .example-pills a {
-    padding: 0.35rem 0.7rem;
-    border: 1px solid var(--hairline);
-    background: var(--paper);
-    color: var(--ink-soft);
+    color: var(--link);
     text-decoration: none;
-    font-family: "JetBrains Mono", monospace;
-    font-size: 0.75rem;
-    transition: border-color 120ms ease, color 120ms ease;
+    border-bottom: 1px dashed rgba(125, 211, 252, 0.35);
 }
 .example-pills a:hover {
-    color: var(--ink);
-    border-color: var(--ink);
+    color: var(--prompt);
+    border-bottom-color: var(--prompt);
 }
 
-/* ============== RESULT — the verdict & report ============== */
+/* ============== RESULT — verdict + report ============== */
 
+/* Verdict — a [STATUS] tag styled like a service-start message. */
 .verdict {
-    display: flex;
-    align-items: center;
-    gap: 1.5rem;
-    padding: 1.5rem 1.6rem;
-    border: 1px solid var(--ink);
-    margin: 1.5rem 0;
-    background: var(--paper);
-    position: relative;
+    margin: 0.9rem 0 0;
+    padding-left: 2.2em;
+    font-size: 14px;
+    color: var(--fg);
 }
-.verdict.attested { border-left: 6px solid var(--sage); }
-.verdict.unattested { border-left: 6px solid var(--amber); }
-.verdict.error { border-left: 6px solid var(--cinnabar); }
-
-.verdict .seal {
-    width: 4.5rem;
-    height: 4.5rem;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 2px solid currentColor;
-    border-radius: 50%;
-    font-family: "JetBrains Mono", monospace;
-    font-weight: 700;
-    font-size: 0.65rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    transform: rotate(-6deg);
-}
-.verdict.attested .seal { color: var(--sage-deep); }
-.verdict.unattested .seal { color: var(--amber-deep); }
-.verdict.error .seal { color: var(--cinnabar-deep); }
-
-.verdict .body { flex: 1; min-width: 0; }
-.verdict .body .ttl {
-    font-family: "Newsreader", serif;
-    font-weight: 600;
-    font-size: 1.1rem;
-    color: var(--ink);
-    margin: 0;
-}
-.verdict .body .sub {
-    margin: 0.2rem 0 0;
-    font-size: 0.9rem;
-    color: var(--ink-soft);
-}
-
-.result-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 1.5rem;
-    border: 1px solid var(--ink);
-    background: var(--paper);
-}
-.result-table th, .result-table td {
-    text-align: left;
-    padding: 0.85rem 1.1rem;
-    border-bottom: 1px solid var(--hairline);
-    vertical-align: top;
-    font-size: 0.92rem;
-}
-.result-table tr:last-child th, .result-table tr:last-child td { border-bottom: 0; }
-.result-table th {
-    font-family: "JetBrains Mono", monospace;
-    font-size: 0.65rem;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
-    font-weight: 600;
-    width: 11rem;
-    background: var(--paper-shade);
-    border-right: 1px solid var(--hairline);
-}
-.result-table td {
-    font-family: "JetBrains Mono", monospace;
-    word-break: break-all;
-    color: var(--ink);
-}
-
-/* Hash group rule — adds visual rhythm to long hex strings. */
-.hashgroup {
-    display: inline;
-    word-break: break-all;
-    font-feature-settings: "ss01", "tnum";
-}
-
-.badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.15rem 0.6rem;
-    font-family: "JetBrains Mono", monospace;
-    font-size: 0.65rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
+.verdict .tag {
+    display: inline-block;
+    padding: 0 0.5em;
+    margin-right: 0.6em;
     font-weight: 700;
     border: 1px solid currentColor;
 }
-.badge.ok { color: var(--sage-deep); }
-.badge.warn { color: var(--amber-deep); }
-.badge.bad { color: var(--cinnabar-deep); }
-.badge.info { color: var(--ink); }
-.badge::before {
-    content: "";
-    width: 6px;
-    height: 6px;
-    background: currentColor;
-    border-radius: 50%;
-}
+.verdict.ok .tag    { color: var(--ok); }
+.verdict.warn .tag  { color: var(--warn); }
+.verdict.err .tag   { color: var(--err); }
+.verdict .ttl       { color: var(--bold); font-weight: 700; }
+.verdict .sub       { color: var(--fg-dim); display: block; margin-top: 0.3rem; }
 
-/* ============== HERO BANNER FRAME ============== */
-
-.banner-frame {
-    border: 1px solid var(--ink);
-    padding: 0.4rem;
-    background: var(--paper);
-    margin: 2rem 0 1rem;
+.report-table {
+    margin: 0.9rem 0 0;
+    padding-left: 2.2em;
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    line-height: 1.6;
 }
-.banner-frame img { display: block; width: 100%; }
-
-/* Hero demo-gif frame styled as an exhibit photograph. */
-.exhibit {
-    border: 1px solid var(--ink);
-    background: var(--paper);
-    padding: 0.5rem 0.5rem 1.2rem;
-    margin: 1.5rem 0;
-    position: relative;
+.report-table th, .report-table td {
+    text-align: left;
+    padding: 0.4rem 0.85rem 0.4rem 0;
+    vertical-align: top;
 }
-.exhibit .caption-strip {
+.report-table th {
+    color: var(--fg-dim);
+    font-weight: 400;
+    width: 11rem;
+    white-space: nowrap;
+}
+.report-table td {
+    color: var(--fg);
+    word-break: break-all;
+}
+.report-table tr {
+    border-bottom: 1px dashed var(--rule);
+}
+.report-table tr:last-child { border-bottom: 0; }
+
+/* Badge inline with a row value. */
+.badge {
+    display: inline-block;
+    padding: 0 0.45em;
+    margin-left: 0.45em;
+    font-size: 11px;
+    border: 1px solid currentColor;
+}
+.badge.ok    { color: var(--ok); }
+.badge.warn  { color: var(--warn); }
+.badge.err   { color: var(--err); }
+.badge.info  { color: var(--link); }
+
+/* ============== EXHIBIT / FIGURE FRAMES ============== */
+
+figure.exhibit {
+    margin: 0.7rem 0 0;
+    padding-left: 2.2em;
+}
+figure.exhibit .frame {
+    border: 1px solid var(--rule);
+    background: var(--bg-elev);
+}
+figure.exhibit .titlebar {
     display: flex;
     justify-content: space-between;
-    padding: 0.5rem 0.6rem;
-    font-family: "JetBrains Mono", monospace;
-    font-size: 0.6rem;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
-    border-bottom: 1px dashed var(--hairline);
-    margin-bottom: 0.5rem;
+    padding: 0.35rem 0.7rem;
+    border-bottom: 1px solid var(--rule);
+    font-size: 11px;
+    color: var(--fg-dim);
 }
-.exhibit img { display: block; width: 100%; }
-.exhibit figcaption {
-    margin: 0.8rem 0.5rem 0;
-    font-family: "Newsreader", serif;
-    font-style: italic;
-    color: var(--ink-soft);
-    font-size: 0.92rem;
+figure.exhibit .titlebar .dots {
+    display: inline-flex;
+    gap: 0.35rem;
 }
+figure.exhibit .titlebar .dots span {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--fg-deep);
+}
+figure.exhibit .titlebar .dots span:nth-child(1) { background: #ff5f56; }
+figure.exhibit .titlebar .dots span:nth-child(2) { background: #ffbd2e; }
+figure.exhibit .titlebar .dots span:nth-child(3) { background: #27c93f; }
+figure.exhibit img { display: block; width: 100%; }
+figure.exhibit figcaption {
+    margin-top: 0.55rem;
+    font-size: 12px;
+    color: var(--fg-dim);
+}
+
+/* ============== EVIDENCE TRIPTYCH (the three method cards) ============== */
+
+/* Render as three indented brew-style sub-blocks rather than a card grid —
+ * keeps the page reading as continuous terminal output. */
+.method-list {
+    margin: 0.6rem 0 0;
+    padding-left: 2.2em;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.2rem;
+}
+@media (min-width: 760px) {
+    .method-list { grid-template-columns: repeat(3, 1fr); }
+}
+.method-list article {
+    border-left: 2px solid var(--prompt);
+    padding: 0.1rem 0 0.1rem 0.9rem;
+}
+.method-list article.err  { border-left-color: var(--err); }
+.method-list article.warn { border-left-color: var(--warn); }
+.method-list .file {
+    color: var(--fg-dim);
+    font-size: 11px;
+    margin-bottom: 0.2rem;
+}
+.method-list h3 {
+    margin: 0 0 0.3rem;
+    color: var(--bold);
+    font-weight: 700;
+    font-size: 0.95rem;
+}
+.method-list p {
+    margin: 0;
+    color: var(--fg);
+    font-size: 13px;
+    line-height: 1.55;
+}
+.method-list .specimen {
+    margin-top: 0.55rem;
+    color: var(--fg-dim);
+    font-size: 11px;
+    border-top: 1px dashed var(--rule);
+    padding-top: 0.45rem;
+}
+.method-list .specimen .v { color: var(--link); }
 
 /* ============== FOOTER ============== */
 
-footer.dossier {
+footer.term {
     margin-top: 3rem;
-    padding: 2.5rem 0 4rem;
-    border-top: 1px solid var(--ink);
-    background: var(--paper-shade);
+    padding: 1.4rem 0 2.5rem;
+    border-top: 1px dashed var(--rule);
+    color: var(--fg-dim);
+    font-size: 12px;
 }
-footer.dossier .wrap {
+footer.term .wrap {
     display: flex;
     justify-content: space-between;
-    align-items: baseline;
     gap: 1rem;
     flex-wrap: wrap;
 }
-footer.dossier .sig {
-    font-family: "Newsreader", serif;
-    font-style: italic;
-    color: var(--ink-soft);
-}
-footer.dossier .meta {
-    font-family: "JetBrains Mono", monospace;
-    font-size: 0.7rem;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
-}
+footer.term .arrow { color: var(--prompt); font-weight: 700; margin-right: 0.5em; }
 
-/* ============== SCROLLBAR (paper edge) ============== */
-::-webkit-scrollbar { width: 10px; }
-::-webkit-scrollbar-track { background: var(--paper-shade); }
+/* ============== SCROLLBAR ============== */
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb {
-    background: var(--ink-faint);
-    border: 2px solid var(--paper-shade);
+    background: var(--rule);
+    border: 2px solid var(--bg);
 }
-::-webkit-scrollbar-thumb:hover { background: var(--ink); }
+::-webkit-scrollbar-thumb:hover { background: var(--prompt-deep); }
+
+/* ============== REDUCED MOTION ============== */
+
+@media (prefers-reduced-motion: reduce) {
+    form.prompt-form .caret { animation: none; opacity: 1; }
+}
 "#;
+
+/// ASCII banner — drawn freehand, tuned to read as `CLEARHASH` in a chunky
+/// block-letter form.  Stays under 86ch (the body container width) at the
+/// minimum supported font size.
+const ASCII_BANNER: &str = r#"   ██████╗██╗     ███████╗ █████╗ ██████╗ ██╗  ██╗ █████╗ ███████╗██╗  ██╗
+  ██╔════╝██║     ██╔════╝██╔══██╗██╔══██╗██║  ██║██╔══██╗██╔════╝██║  ██║
+  ██║     ██║     █████╗  ███████║██████╔╝███████║███████║███████╗███████║
+  ██║     ██║     ██╔══╝  ██╔══██║██╔══██╗██╔══██║██╔══██║╚════██║██╔══██║
+  ╚██████╗███████╗███████╗██║  ██║██║  ██║██║  ██║██║  ██║███████║██║  ██║
+   ╚═════╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝"#;
 
 fn layout(title: &str, body: Markup) -> Markup {
     html! {
@@ -770,41 +605,50 @@ fn layout(title: &str, body: Markup) -> Markup {
                 meta property="og:title" content=(title);
                 meta property="og:description" content="Rebuild every package. Compare every byte. Block every tamper.";
                 meta property="og:image" content="/assets/banner-dark.png";
+                meta name="theme-color" content="#0a0e0a";
                 link rel="icon" type="image/svg+xml" href="/assets/favicon.svg";
                 link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png";
                 link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16.png";
                 link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png";
 
-                // Google Fonts — Newsreader (literary serif w/ italic), Geist
-                // (clean grotesque body), JetBrains Mono (hash / evidence labels).
-                // Preconnect speeds up the font CSS handshake.
+                // JetBrains Mono only — single face used at 400 / 700.
                 link rel="preconnect" href="https://fonts.googleapis.com";
                 link rel="preconnect" href="https://fonts.gstatic.com" crossorigin;
                 link
                     rel="stylesheet"
-                    href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..600&family=Geist:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap";
+                    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap";
 
                 style { (PreEscaped(STYLES)) }
             }
             body {
-                header.dossier {
+                header.bar {
                     div.wrap {
-                        a.brand href="/" {
-                            "Clear" span.crosshatch { "#" } "hash"
+                        div.lhs {
+                            span.traffic { span {} span {} span {} }
+                            span.ses {
+                                b { "clearhash" }
+                                "@verifier — "
+                                "v0.1 · MIT · "
+                                span.prompt { "● ready" }
+                            }
                         }
-                        nav.dossier-nav {
-                            a href="/inspect" { "Inspect a package" }
-                            a href="https://github.com/Builder106/ClearHash" { "Source ↗" }
+                        nav {
+                            a href="/inspect" { "inspect" }
+                            a href="https://github.com/Builder106/ClearHash" { "source ↗" }
                         }
                     }
                 }
                 (body)
-                footer.dossier {
+                footer.term {
                     div.wrap {
-                        span.sig { "Filed under supply-chain integrity. " span.case-label { "MIT-licensed" } "." }
-                        span.meta {
+                        span {
+                            span.arrow { "==>" }
+                            "Filed under supply-chain integrity. "
+                            span.dim { "MIT-licensed." }
+                        }
+                        span.dim {
                             "CLH-26 · "
-                            a href="https://github.com/Builder106/ClearHash" style="color:inherit;text-decoration:underline;text-decoration-color:var(--cinnabar);" { "Github" }
+                            a href="https://github.com/Builder106/ClearHash" { "github.com/Builder106/ClearHash" }
                         }
                     }
                 }
@@ -812,8 +656,8 @@ fn layout(title: &str, body: Markup) -> Markup {
                 // Vercel Web Analytics + Speed Insights.
                 // Scripts are served by Vercel's edge at the canonical paths; they 404
                 // harmlessly in local dev. Enable each in the Vercel dashboard
-                // (clear-hash → Analytics → Enable, same for Speed Insights) for data to
-                // start flowing.
+                // (clear-hash → Analytics → Enable, same for Speed Insights) for data
+                // to start flowing.
                 script { (PreEscaped("window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };")) }
                 script defer src="/_vercel/insights/script.js" {}
                 script { (PreEscaped("window.si = window.si || function () { (window.siq = window.siq || []).push(arguments); };")) }
@@ -823,48 +667,24 @@ fn layout(title: &str, body: Markup) -> Markup {
     }
 }
 
-/// Examiner-signed circular stamp — a tiny SVG rendered top-right of the hero.
-/// Reads like the wax-impressed seal on the cover of a case file.
-fn examiner_stamp() -> Markup {
-    let svg = r##"<svg viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-            <path id="circ" d="M 90 90 m -68 0 a 68 68 0 1 1 136 0 a 68 68 0 1 1 -136 0" fill="none"/>
-        </defs>
-        <circle cx="90" cy="90" r="80" fill="none" stroke="currentColor" stroke-width="1.4"/>
-        <circle cx="90" cy="90" r="68" fill="none" stroke="currentColor" stroke-width="0.6" stroke-dasharray="3 3"/>
-        <text font-size="9.6">
-            <textPath href="#circ" startOffset="2%">CASE NO. CLH-26 · EXAMINED &amp; FILED · SUPPLY-CHAIN INTEGRITY · </textPath>
-        </text>
-        <text x="90" y="86" text-anchor="middle" font-size="14" font-weight="700" letter-spacing="2">CLEARED</text>
-        <text x="90" y="104" text-anchor="middle" font-size="9" letter-spacing="2">REBUILD ✕ COMPARE</text>
-        <line x1="40" y1="118" x2="140" y2="118" stroke="currentColor" stroke-width="0.6"/>
-        <text x="90" y="132" text-anchor="middle" font-size="7.5" letter-spacing="2">SLSA · SIGSTORE · REKOR</text>
-    </svg>"##;
+/// Shared `clearhash info` header — the ASCII banner + a brew-style info
+/// strip with project metadata.  Used at the top of every page.
+fn info_header() -> Markup {
     html! {
-        div.stamp { (PreEscaped(svg)) }
-    }
-}
+        pre.banner aria-label="ClearHash" { (ASCII_BANNER) }
 
-/// Case-strip — the perforated dossier metadata bar that sits below the header
-/// on the landing page. Looks like the header of a real evidence binder.
-fn case_strip() -> Markup {
-    html! {
-        dl.case-strip {
-            div {
-                dt { "Case no." }
-                dd { "CLH-26" }
-            }
-            div {
-                dt { "Classification" }
-                dd { "OPEN · PUBLIC" }
-            }
-            div {
-                dt { "Subject" }
-                dd { "Supply-chain integrity" }
-            }
-            div {
-                dt { "Method" }
-                dd { "Rebuild ✕ Compare" }
+        p style="padding-left:0;margin:0.4rem 0 1.4rem;" class="dim" {
+            "supply-chain integrity verifier — rebuild every package, compare every byte, block every tamper."
+        }
+
+        div.block {
+            span.arrow { "==>" }
+            h2 { "clearhash info " span.sub { "· case CLH-26" } }
+            dl.info-strip {
+                dt { "classification" }   dd { "open · public · MIT" }
+                dt { "subject" }          dd { "Supply-chain integrity (npm · PyPI · Cargo)" }
+                dt { "method" }           dd { "rebuild ✕ compare against attested source commit" }
+                dt { "rate-limit" }       dd { "30 req/min global, /inspect endpoint" }
             }
         }
     }
@@ -875,82 +695,85 @@ pub async fn landing() -> Markup {
         "ClearHash — supply-chain integrity verifier",
         html! {
             div.wrap {
-                (case_strip())
+                (info_header())
 
-                section.hero {
-                    div.hero-row {
-                        (examiner_stamp())
-
-                        h1 {
-                            "Don't just check signatures. "
-                            span.accent-italic { "Rebuild the source." }
-                        }
-
-                        p.lede {
+                /* ============== HERO ============== */
+                div.block.hero {
+                    span.arrow { "==>" }
+                    h2 {
+                        "Don't just check signatures. "
+                        strong { "Rebuild the source." }
+                    }
+                    div.body {
+                        p {
                             "ClearHash fetches a package, verifies its SLSA attestation through "
                             "Sigstore + Rekor, rebuilds it from the attested source commit in a "
                             "Docker container, and compares the rebuilt file tree against the "
                             "registry artifact. If anything differs, the install is blocked."
                         }
-
-                        div.cta {
-                            a.btn.primary href="/inspect" { "Inspect a package" span aria-hidden="true" { "→" } }
-                            a.btn.secondary href="https://github.com/Builder106/ClearHash" { "Source on GitHub ↗" }
-                        }
                     }
-
-                    div.banner-frame {
-                        picture {
-                            source media="(prefers-color-scheme: dark)" srcset="/assets/banner-dark.png";
-                            source media="(prefers-color-scheme: light)" srcset="/assets/banner-light.png";
-                            img src="/assets/banner-light.png" alt="ClearHash";
-                        }
+                    div.cta {
+                        a.btn href="/inspect" { "[ inspect a package → ]" }
+                        a.btn.dim href="https://github.com/Builder106/ClearHash" { "[ source on github ↗ ]" }
                     }
                 }
 
-                section {
-                    div.section-mark {
-                        span.num { "§ 01" }
-                        span.ttl { "Exhibit A · Live verify run" }
-                        span.rule {}
-                    }
-                    h2 { "A real run against " em { "npm:sigstore@2.3.1" } "." }
-                    p {
-                        "Full pipeline in ~36 seconds (shown at 4× playback). "
-                        "The fetch, the attestation parse, the Docker rebuild, the tree-diff — "
-                        "every step is in the recording, in order."
+                /* ============== EXHIBIT A — DEMO ============== */
+                div.block {
+                    span.arrow { "==>" }
+                    h2 { "exhibit A " span.sub { "· live verify run · npm:sigstore@2.3.1" } }
+                    div.body {
+                        p {
+                            "Full pipeline in ~36 seconds (shown at 4× playback). The fetch, the "
+                            "attestation parse, the Docker rebuild, the tree-diff — every step in "
+                            "the recording, in order."
+                        }
                     }
                     figure.exhibit {
-                        div.caption-strip {
-                            span { "Exhibit A — verify, npm:sigstore@2.3.1" }
-                            span { "CLH-26 · 1 / 1" }
+                        div.frame {
+                            div.titlebar {
+                                span.dots { span {} span {} span {} }
+                                span { "clearhash verify npm:sigstore@2.3.1" }
+                                span { "rec · 36s" }
+                            }
+                            img src="/assets/demo-verify.gif" alt="verify demo";
                         }
-                        img src="/assets/demo-verify.gif" alt="verify demo";
                         figcaption {
                             "The rebuild reproduces the registry artifact byte-for-byte. "
-                            "Result: MATCH, tree-hash logged."
+                            span.ok { "MATCH" } " — tree-hash logged."
                         }
+                    }
+
+                    pre.log style="margin-top:1rem;" {
+"  " (PreEscaped("<span class=\"dim\">[1/5]</span> Fetching <span class=\"bold\">sigstore</span> from <span class=\"link\">npm</span>\n"))
+"        sha256: " (PreEscaped("<span class=\"dim\">1b5041a35f86125db7f872742502470753fd2e1109521b7dbff8a61d229a03c2</span>\n"))
+"  " (PreEscaped("<span class=\"dim\">[2/5]</span> Verifying Sigstore attestation\n"))
+"        " (PreEscaped("<span class=\"warn\">WARN</span> clearhash_provenance: provenance: validated\n"))
+"        commit: " (PreEscaped("<span class=\"link\">46e7056ff991</span>  (<span class=\"dim\">workflow: github.com/sigstore/sigstore-js/.github/workflows/release.yml@refs/heads/main</span>)\n"))
+"  " (PreEscaped("<span class=\"dim\">[3/5]</span> Spinning up rebuild container (<span class=\"bold\">node:20.11.1-bookworm-slim</span>)\n"))
+"  " (PreEscaped("<span class=\"dim\">[4/5]</span> Rebuilding from source at commit <span class=\"link\">46e7056ff991</span>\n"))
+"  " (PreEscaped("<span class=\"dim\">[5/5]</span> Comparing file trees\n\n"))
+"  " (PreEscaped("<span class=\"ok\">✓ MATCH</span> npm:sigstore@2.3.1 tree-hash <span class=\"dim\">ec714016d7e4ce742f9aa23b6f16f19cb967bf82</span>"))
                     }
                 }
 
-                section {
-                    div.section-mark {
-                        span.num { "§ 02" }
-                        span.ttl { "Method of examination" }
-                        span.rule {}
+                /* ============== METHOD ============== */
+                div.block {
+                    span.arrow { "==>" }
+                    h2 { "method of examination " span.sub { "· what it catches, and how" } }
+                    div.body {
+                        p {
+                            "The supply-chain attacks of the last five years (event-stream, ua-parser-js, "
+                            "the post-install crypto-wallet stealers, xz-utils) all share one shape: "
+                            "the registry tarball diverges from the source repo. Existing tools verify "
+                            span.bold { "who " } "signed the tarball, or that the tarball matches itself "
+                            "across mirrors — but not whether the tarball is what the source code would "
+                            "produce. ClearHash does the rebuild and the comparison."
+                        }
                     }
-                    h2 { "What it catches — and how." }
-                    p {
-                        "The supply-chain attacks of the last five years (event-stream, ua-parser-js, "
-                        "the post-install crypto-wallet stealers, xz-utils) all share one shape: the "
-                        "registry tarball diverges from the source repo. Existing tools verify "
-                        em { "who" } " signed the tarball, or that the tarball matches itself across "
-                        "mirrors — but not whether the tarball is what the source code would produce. "
-                        "ClearHash does the rebuild and the comparison."
-                    }
-                    div.evidence {
-                        article.tape {
-                            div.file-no { "§ 02.A" }
+                    div.method-list {
+                        article {
+                            div.file { "step 1/3" }
                             h3 { "Sigstore + Rekor" }
                             p {
                                 "Verifies the SLSA attestation envelope, extracts the Fulcio-issued "
@@ -958,27 +781,23 @@ pub async fn landing() -> Markup {
                                 "repo, and confirms a Rekor transparency-log entry."
                             }
                             div.specimen {
-                                "specimen: rekor_log_index"
-                                br;
-                                "→ 94,408,136"
+                                "rekor_log_index → " span.v { "94,408,136" }
                             }
                         }
-                        article.tape {
-                            div.file-no { "§ 02.B" }
+                        article {
+                            div.file { "step 2/3" }
                             h3 { "Real rebuild" }
                             p {
                                 "Clones the attested commit, pins HEAD, runs the ecosystem's build "
                                 "script (npm ci + npm pack) in a Docker container — with "
-                                code.inline { "--ignore-scripts" } " to block lifecycle hooks."
+                                code.inl { "--ignore-scripts" } " to block lifecycle hooks."
                             }
                             div.specimen {
-                                "specimen: commit_sha"
-                                br;
-                                "→ 46e7056ff991…"
+                                "commit_sha → " span.v { "46e7056ff991…" }
                             }
                         }
-                        article.tape.red {
-                            div.file-no { "§ 02.C" }
+                        article.err {
+                            div.file { "step 3/3" }
                             h3 { "File-tree compare" }
                             p {
                                 "Normalises both archives (strips mtimes, scrubs npm-injected "
@@ -986,65 +805,60 @@ pub async fn landing() -> Markup {
                                 "on mismatch."
                             }
                             div.specimen {
-                                "specimen: tree_hash"
-                                br;
-                                "→ ec714016d7e4ce74…"
+                                "tree_hash → " span.v { "ec714016d7e4ce74…" }
                             }
                         }
                     }
                 }
 
-                section {
-                    div.section-mark {
-                        span.num { "§ 03" }
-                        span.ttl { "Field-lab instructions" }
-                        span.rule {}
-                    }
-                    h2 { "Install the CLI." }
-                    p {
-                        "The full verify pipeline needs a running Docker daemon (Docker Desktop or "
-                        "OrbStack on macOS). The "
-                        a href="/inspect" style="color:var(--cinnabar);text-decoration:none;border-bottom:1px solid currentColor;" {
-                            code.inline { "/inspect" }
+                /* ============== INSTALL ============== */
+                div.block {
+                    span.arrow { "==>" }
+                    h2 { "install the CLI" }
+                    div.body {
+                        p {
+                            "The full verify pipeline needs a running Docker daemon (Docker Desktop or "
+                            "OrbStack on macOS). The "
+                            a href="/inspect" { code.inl { "/inspect" } }
+                            " endpoint on this site runs the fetch + attestation parse parts without Docker."
                         }
-                        " endpoint on this site runs the fetch + attestation parse parts without Docker."
                     }
-                    pre.field-log {
-                        (PreEscaped("<span class=\"dim\"># clone &amp; install</span>
-<span class=\"red\">git</span> clone https://github.com/Builder106/ClearHash.git
-<span class=\"red\">cd</span> ClearHash
-<span class=\"red\">cargo</span> install --path crates/clearhash-cli
-
-<span class=\"dim\"># first verify run</span>
-<span class=\"green\">clearhash</span> verify npm:sigstore@2.3.1"))
+                    pre.log style="padding-left:2.2em;" {
+"  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">git</span> clone https://github.com/Builder106/ClearHash.git\n"))
+"  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">cd</span> ClearHash\n"))
+"  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">cargo</span> install --path crates/clearhash-cli\n\n"))
+"  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">clearhash</span> verify <span class=\"link\">npm:sigstore@2.3.1</span>"))
                     }
                 }
 
-                section {
-                    div.section-mark {
-                        span.num { "§ 04" }
-                        span.ttl { "Programmatic specimen request" }
-                        span.rule {}
+                /* ============== API ============== */
+                div.block {
+                    span.arrow { "==>" }
+                    h2 { "API " span.sub { "· programmatic specimen request" } }
+                    div.body {
+                        p { "Programmatic access to the inspect endpoint:" }
                     }
-                    h2 { "API." }
-                    p { "Programmatic access to the inspect endpoint:" }
-                    pre.field-log {
-                        (PreEscaped("$ <span class=\"red\">curl</span> 'https://clear-hash.vercel.app/api/inspect?package=npm:sigstore@2.3.1'
-{
-  \"package\": \"npm:sigstore@2.3.1\",
-  \"registry_sha256\": \"1b5041a35f86125db7f872742502470753fd2e1109521b7dbff8a61d229a03c2\",
-  \"attestation\": {
-    \"source_repo\": \"git+https://github.com/sigstore/sigstore-js@refs/heads/main\",
-    \"commit_sha\": \"46e7056ff9912ebfee5298d94024895a9fea76c0\",
-    \"builder_id\": \"https://github.com/actions/runner/github-hosted\",
-    \"issuer_dn\": \"O=sigstore.dev, CN=sigstore-intermediate\",
-    \"workflow_uri\": \"https://github.com/sigstore/sigstore-js/.github/workflows/release.yml@refs/heads/main\",
-    \"rekor_log_index\": 94408136
-  }
-}"))
+                    pre.log style="padding-left:2.2em;" {
+"  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">curl</span> '<span class=\"link\">https://clear-hash.vercel.app/api/inspect?package=npm:sigstore@2.3.1</span>'\n"))
+"  {\n"
+"    \"package\": \"npm:sigstore@2.3.1\",\n"
+"    \"registry_sha256\": " (PreEscaped("<span class=\"dim\">\"1b5041a35f86125db7f872742502470753fd2e1109521b7dbff8a61d229a03c2\"</span>")) ",\n"
+"    \"attestation\": {\n"
+"      \"source_repo\": " (PreEscaped("<span class=\"link\">\"git+https://github.com/sigstore/sigstore-js@refs/heads/main\"</span>")) ",\n"
+"      \"commit_sha\": " (PreEscaped("<span class=\"link\">\"46e7056ff9912ebfee5298d94024895a9fea76c0\"</span>")) ",\n"
+"      \"builder_id\": \"https://github.com/actions/runner/github-hosted\",\n"
+"      \"issuer_dn\": \"O=sigstore.dev, CN=sigstore-intermediate\",\n"
+"      \"workflow_uri\": " (PreEscaped("<span class=\"link\">\"https://github.com/sigstore/sigstore-js/.github/workflows/release.yml@refs/heads/main\"</span>")) ",\n"
+"      \"rekor_log_index\": 94408136\n"
+"    }\n"
+"  }"
                     }
-                    p {
-                        "Rate-limited to 30 requests/minute globally. For higher throughput, run the CLI locally."
+                    div.body style="margin-top:0.8rem;" {
+                        p class="dim" {
+                            span.warn { "Warning:" }
+                            " rate-limited to 30 requests/minute globally. For higher throughput, "
+                            "run the CLI locally."
+                        }
                     }
                 }
             }
@@ -1057,20 +871,19 @@ pub fn inspect_empty() -> Markup {
         "ClearHash · inspect",
         html! {
             div.wrap {
-                (case_strip())
+                (info_header())
 
-                section {
-                    div.section-mark {
-                        span.num { "§ 00" }
-                        span.ttl { "Specimen intake form" }
-                        span.rule {}
-                    }
-                    h2 { "Inspect a package." }
-                    p {
-                        "Fetches the artifact, parses its SLSA attestation, validates the "
-                        "certificate chain. No rebuild. Use the CLI for the full byte-by-byte verify."
+                div.block {
+                    span.arrow { "==>" }
+                    h2 { "inspect a package " span.sub { "· no rebuild, attestation parse only" } }
+                    div.body {
+                        p {
+                            "Fetches the artifact, parses its SLSA attestation, validates the certificate "
+                            "chain. Use the CLI for the full byte-by-byte verify."
+                        }
                     }
                     (inspect_form(""))
+                    (example_pills())
                 }
             }
         },
@@ -1078,83 +891,81 @@ pub fn inspect_empty() -> Markup {
 }
 
 pub fn inspect_result(package: &str, result: &InspectResult) -> Markup {
-    let (verdict_class, seal_text, verdict_title, verdict_sub) = match &result.attestation {
+    let (verdict_class, tag, ttl, sub) = match &result.attestation {
         Some(_) => (
-            "attested",
-            "ATTESTED",
-            "Attestation verified.",
-            "Fulcio leaf cert, Rekor transparency-log entry, workflow URI cross-checked against source repo.",
+            "ok",
+            "[ OK ]",
+            "attestation verified",
+            "Fulcio leaf cert · Rekor transparency-log entry · workflow URI cross-checked against source repo.",
         ),
         None => (
-            "unattested",
-            "NO ATT.",
-            "No attestation on file.",
-            "The CLI's verify refuses to rebuild without --allow-unattested.",
+            "warn",
+            "[WARN]",
+            "no attestation on file",
+            "The CLI's verify refuses to rebuild this artifact without --allow-unattested.",
         ),
-    };
-    let latest_badge = if result.inferred_latest {
-        html! { " " span.badge.info { "resolved → latest" } }
-    } else {
-        html! {}
     };
     let prefill: &str = if result.inferred_latest {
         &result.package
     } else {
         package
     };
+    let latest_badge = if result.inferred_latest {
+        html! { " " span.badge.info { "resolved → latest" } }
+    } else {
+        html! {}
+    };
+
     layout(
         &format!("ClearHash · {}", result.package),
         html! {
             div.wrap {
-                (case_strip())
+                (info_header())
 
-                section {
-                    div.section-mark {
-                        span.num { "§ 00" }
-                        span.ttl { "Specimen intake form" }
-                        span.rule {}
-                    }
-                    h2 { "Inspect a package." }
+                div.block {
+                    span.arrow { "==>" }
+                    h2 { "inspect a package" }
                     (inspect_form(prefill))
+                    (example_pills())
 
                     div class=(format!("verdict {}", verdict_class)) {
-                        div.seal { (seal_text) }
-                        div.body {
-                            p.ttl { (verdict_title) " " (latest_badge) }
-                            p.sub { (verdict_sub) }
-                        }
+                        span.tag { (tag) }
+                        span.ttl { (ttl) }
+                        (latest_badge)
+                        span.sub { (sub) }
                     }
 
-                    table.result-table {
-                        tr { th { "Package" } td { (result.package) } }
-                        tr { th { "Registry SHA-256" } td { span.hashgroup { (result.registry_sha256) } } }
+                    table.report-table {
+                        tr { th { "package" } td { (result.package) } }
+                        tr { th { "registry sha-256" } td class="link" { (result.registry_sha256) } }
                         @if let Some(a) = &result.attestation {
-                            tr { th { "Source repo" } td { (a.source_repo) } }
-                            tr { th { "Commit" } td { span.hashgroup { (a.commit_sha) } } }
-                            tr { th { "Builder" } td { (a.builder_id) } }
-                            tr { th { "Cert issuer" } td { (a.issuer_dn) } }
+                            tr { th { "source repo" } td class="link" { (a.source_repo) } }
+                            tr { th { "commit" } td class="link" { (a.commit_sha) } }
+                            tr { th { "builder" } td { (a.builder_id) } }
+                            tr { th { "cert issuer" } td { (a.issuer_dn) } }
                             @if let Some(w) = &a.workflow_uri {
-                                tr { th { "Workflow" } td { (w) } }
+                                tr { th { "workflow" } td class="link" { (w) } }
                             }
                             @if let Some(li) = a.rekor_log_index {
-                                tr { th { "Rekor index" } td { (li) } }
+                                tr { th { "rekor index" } td { (li) } }
                             }
                         } @else {
                             tr {
-                                th { "Note" }
+                                th { "note" }
                                 td {
                                     "This package has no SLSA attestation. The CLI's "
-                                    code.inline { "verify" }
+                                    code.inl { "verify" }
                                     " refuses to rebuild it without "
-                                    code.inline { "--allow-unattested" } "."
+                                    code.inl { "--allow-unattested" } "."
                                 }
                             }
                         }
                     }
 
-                    p style="margin-top:1.5rem; font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--ink-faint); letter-spacing:0.12em; text-transform:uppercase;" {
-                        "JSON · "
-                        code.inline { "GET /api/inspect?package=" (package) }
+                    p style="padding-left:0;margin-top:1rem;font-size:12px;" class="dim" {
+                        span.arrow { "==>" }
+                        " json · "
+                        code.inl { "GET /api/inspect?package=" (package) }
                     }
                 }
             }
@@ -1167,29 +978,24 @@ pub fn inspect_error(package: &str, err: &InspectError) -> Markup {
         "ClearHash · error",
         html! {
             div.wrap {
-                (case_strip())
+                (info_header())
 
-                section {
-                    div.section-mark {
-                        span.num { "§ 00" }
-                        span.ttl { "Specimen intake form" }
-                        span.rule {}
-                    }
-                    h2 { "Inspect a package." }
+                div.block {
+                    span.arrow { "==>" }
+                    h2 { "inspect a package" }
                     (inspect_form(package))
+                    (example_pills())
 
-                    div.verdict.error {
-                        div.seal { "ERROR " (err.status) }
-                        div.body {
-                            p.ttl { "Specimen rejected." }
-                            p.sub { (err.message) }
-                        }
+                    div.verdict.err {
+                        span.tag { "[FAIL]" }
+                        span.ttl { "specimen rejected (" (err.status) ")" }
+                        span.sub { (err.message) }
                     }
 
-                    table.result-table {
-                        tr { th { "Package" } td { (package) } }
-                        tr { th { "Status" } td { (err.status) } }
-                        tr { th { "Detail" } td { (err.message) } }
+                    table.report-table {
+                        tr { th { "package" } td { (package) } }
+                        tr { th { "status" } td class="err" { (err.status) } }
+                        tr { th { "detail" } td { (err.message) } }
                     }
                 }
             }
@@ -1199,22 +1005,30 @@ pub fn inspect_error(package: &str, err: &InspectError) -> Markup {
 
 fn inspect_form(prefill: &str) -> Markup {
     html! {
-        form.inspect method="get" action="/inspect" {
-            span.specimen-tag { "Specimen" }
+        form.prompt-form method="get" action="/inspect" {
+            span.ps { "$" }
+            span.cmd { "clearhash verify" }
             input
                 type="text"
                 name="package"
                 placeholder="npm:sigstore@2.3.1"
                 value=(prefill)
                 autocomplete="off"
+                spellcheck="false"
                 autofocus?[prefill.is_empty()] ;
-            button type="submit" { "Inspect →" }
+            span.caret aria-hidden="true" {}
+            button type="submit" { "↵ run" }
         }
+    }
+}
+
+fn example_pills() -> Markup {
+    html! {
         div.example-pills {
-            span.label { "Examples →" }
+            span.label { "==> examples:" }
             a href="/inspect?package=npm:sigstore@2.3.1" { "npm:sigstore@2.3.1" }
-            a href="/inspect?package=npm:@sigstore/sign" title="no version → latest" { "npm:@sigstore/sign (latest)" }
-            a href="/inspect?package=npm:left-pad@1.3.0" { "npm:left-pad@1.3.0 (unattested)" }
+            a href="/inspect?package=npm:@sigstore/sign" title="no version → latest" { "npm:@sigstore/sign" }
+            a href="/inspect?package=npm:left-pad@1.3.0" { "npm:left-pad@1.3.0" }
         }
     }
 }
