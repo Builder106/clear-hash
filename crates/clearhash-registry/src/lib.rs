@@ -135,13 +135,25 @@ mod tests {
 
     impl FakeAdapter {
         fn new(base: &str) -> Self {
-            Self { base: base.to_string(), with_attestation: true, with_latest: true }
+            Self {
+                base: base.to_string(),
+                with_attestation: true,
+                with_latest: true,
+            }
         }
         fn no_attestation(base: &str) -> Self {
-            Self { base: base.to_string(), with_attestation: false, with_latest: true }
+            Self {
+                base: base.to_string(),
+                with_attestation: false,
+                with_latest: true,
+            }
         }
         fn no_latest(base: &str) -> Self {
-            Self { base: base.to_string(), with_attestation: true, with_latest: false }
+            Self {
+                base: base.to_string(),
+                with_attestation: true,
+                with_latest: false,
+            }
         }
     }
 
@@ -192,7 +204,11 @@ mod tests {
     }
 
     fn pkg() -> PackageRef {
-        PackageRef { ecosystem: Ecosystem::Npm, name: "left-pad".into(), version: "1.0.0".into() }
+        PackageRef {
+            ecosystem: Ecosystem::Npm,
+            name: "left-pad".into(),
+            version: "1.0.0".into(),
+        }
     }
 
     #[tokio::test]
@@ -215,7 +231,10 @@ mod tests {
         let on_disk = tokio::fs::read(&result.archive_path).await.unwrap();
         assert_eq!(on_disk, b"tarball-bytes");
         assert_eq!(result.registry_sha256, sha256(b"tarball-bytes"));
-        assert_eq!(result.attestation_bundle.as_deref(), Some(&b"att-bytes"[..]));
+        assert_eq!(
+            result.attestation_bundle.as_deref(),
+            Some(&b"att-bytes"[..])
+        );
     }
 
     #[tokio::test]
@@ -232,8 +251,13 @@ mod tests {
             .mount(&server)
             .await;
 
-        let result = fetch(&FakeAdapter::new(&server.uri()), &pkg()).await.unwrap();
-        assert!(result.attestation_bundle.is_none(), "404 attestation should map to None");
+        let result = fetch(&FakeAdapter::new(&server.uri()), &pkg())
+            .await
+            .unwrap();
+        assert!(
+            result.attestation_bundle.is_none(),
+            "404 attestation should map to None"
+        );
     }
 
     #[tokio::test]
@@ -247,7 +271,9 @@ mod tests {
         // No /attestation mock registered — if fetch requested it, wiremock
         // would return 404 and we'd still get None, so to prove it's *not*
         // requested we rely on the adapter returning no attestation URL.
-        let result = fetch(&FakeAdapter::no_attestation(&server.uri()), &pkg()).await.unwrap();
+        let result = fetch(&FakeAdapter::no_attestation(&server.uri()), &pkg())
+            .await
+            .unwrap();
         assert!(result.attestation_bundle.is_none());
     }
 

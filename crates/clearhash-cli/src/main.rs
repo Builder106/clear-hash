@@ -422,7 +422,13 @@ mod tests {
         let cli = parse(&["clearhash", "verify", "npm:left-pad@1.0.0"]).unwrap();
         assert!(!cli.verbose);
         match cli.command {
-            Cmd::Verify { package, allow_unattested, keep_workdir, json, simulate_tamper } => {
+            Cmd::Verify {
+                package,
+                allow_unattested,
+                keep_workdir,
+                json,
+                simulate_tamper,
+            } => {
                 assert_eq!(package, "npm:left-pad@1.0.0");
                 assert!(!allow_unattested);
                 assert!(!keep_workdir);
@@ -436,11 +442,21 @@ mod tests {
     #[test]
     fn verify_flags_parse() {
         let cli = parse(&[
-            "clearhash", "verify", "cargo:serde@1.0.0", "--allow-unattested", "--keep-workdir", "--json",
+            "clearhash",
+            "verify",
+            "cargo:serde@1.0.0",
+            "--allow-unattested",
+            "--keep-workdir",
+            "--json",
         ])
         .unwrap();
         match cli.command {
-            Cmd::Verify { allow_unattested, keep_workdir, json, .. } => {
+            Cmd::Verify {
+                allow_unattested,
+                keep_workdir,
+                json,
+                ..
+            } => {
                 assert!(allow_unattested && keep_workdir && json);
             }
             _ => panic!("expected Verify"),
@@ -452,7 +468,9 @@ mod tests {
         // `default_missing_value = "all"` — the bare flag means "tamper everything".
         let cli = parse(&["clearhash", "verify", "npm:x@1.0.0", "--simulate-tamper"]).unwrap();
         match cli.command {
-            Cmd::Verify { simulate_tamper, .. } => {
+            Cmd::Verify {
+                simulate_tamper, ..
+            } => {
                 assert!(matches!(simulate_tamper, Some(TamperModeArg::All)));
             }
             _ => panic!("expected Verify"),
@@ -461,9 +479,17 @@ mod tests {
 
     #[test]
     fn simulate_tamper_takes_an_explicit_kebab_value() {
-        let cli = parse(&["clearhash", "verify", "npm:x@1.0.0", "--simulate-tamper=content-swap"]).unwrap();
+        let cli = parse(&[
+            "clearhash",
+            "verify",
+            "npm:x@1.0.0",
+            "--simulate-tamper=content-swap",
+        ])
+        .unwrap();
         match cli.command {
-            Cmd::Verify { simulate_tamper, .. } => {
+            Cmd::Verify {
+                simulate_tamper, ..
+            } => {
                 assert!(matches!(simulate_tamper, Some(TamperModeArg::ContentSwap)));
             }
             _ => panic!("expected Verify"),
@@ -475,12 +501,24 @@ mod tests {
         // `require_equals = true`: the space form must NOT consume the next token as
         // the tamper mode (it would otherwise swallow a positional). Bare flag is fine.
         let cli = parse(&["clearhash", "verify", "npm:x@1.0.0", "--simulate-tamper"]).unwrap();
-        assert!(matches!(cli.command, Cmd::Verify { simulate_tamper: Some(TamperModeArg::All), .. }));
+        assert!(matches!(
+            cli.command,
+            Cmd::Verify {
+                simulate_tamper: Some(TamperModeArg::All),
+                ..
+            }
+        ));
     }
 
     #[test]
     fn rejects_unknown_tamper_mode() {
-        assert!(parse(&["clearhash", "verify", "npm:x@1.0.0", "--simulate-tamper=nonsense"]).is_err());
+        assert!(parse(&[
+            "clearhash",
+            "verify",
+            "npm:x@1.0.0",
+            "--simulate-tamper=nonsense"
+        ])
+        .is_err());
     }
 
     #[test]
@@ -490,7 +528,14 @@ mod tests {
 
     #[test]
     fn inspect_parses_with_json_and_global_verbose() {
-        let cli = parse(&["clearhash", "--verbose", "inspect", "npm:left-pad@1.0.0", "--json"]).unwrap();
+        let cli = parse(&[
+            "clearhash",
+            "--verbose",
+            "inspect",
+            "npm:left-pad@1.0.0",
+            "--json",
+        ])
+        .unwrap();
         assert!(cli.verbose);
         match cli.command {
             Cmd::Inspect { package, json } => {
@@ -503,11 +548,26 @@ mod tests {
 
     #[test]
     fn tamper_mode_arg_maps_onto_every_core_mode() {
-        assert!(matches!(TamperMode::from(TamperModeArg::InjectedPayload), TamperMode::InjectedPayload));
-        assert!(matches!(TamperMode::from(TamperModeArg::ContentSwap), TamperMode::ContentSwap));
-        assert!(matches!(TamperMode::from(TamperModeArg::ModeFlip), TamperMode::ModeFlip));
-        assert!(matches!(TamperMode::from(TamperModeArg::Deletion), TamperMode::Deletion));
-        assert!(matches!(TamperMode::from(TamperModeArg::All), TamperMode::All));
+        assert!(matches!(
+            TamperMode::from(TamperModeArg::InjectedPayload),
+            TamperMode::InjectedPayload
+        ));
+        assert!(matches!(
+            TamperMode::from(TamperModeArg::ContentSwap),
+            TamperMode::ContentSwap
+        ));
+        assert!(matches!(
+            TamperMode::from(TamperModeArg::ModeFlip),
+            TamperMode::ModeFlip
+        ));
+        assert!(matches!(
+            TamperMode::from(TamperModeArg::Deletion),
+            TamperMode::Deletion
+        ));
+        assert!(matches!(
+            TamperMode::from(TamperModeArg::All),
+            TamperMode::All
+        ));
     }
 
     #[test]
