@@ -408,3 +408,113 @@ fn print_outcome(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
+        Cli::try_parse_from(args)
+    }
+
+    #[test]
+    fn verify_parses_with_defaults() {
+        let cli = parse(&["clearhash", "verify", "npm:left-pad@1.0.0"]).unwrap();
+        assert!(!cli.verbose);
+        match cli.command {
+            Cmd::Verify { package, allow_unattested, keep_workdir, json, simulate_tamper } => {
+                assert_eq!(package, "npm:left-pad@1.0.0");
+                assert!(!allow_unattested);
+                assert!(!keep_workdir);
+                assert!(!json);
+                assert!(simulate_tamper.is_none());
+            }
+            _ => panic!("expected Verify"),
+        }
+    }
+
+    #[test]
+    fn verify_flags_parse() {
+        let cli = parse(&[
+            "clearhash", "verify", "cargo:serde@1.0.0", "--allow-unattested", "--keep-workdir", "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Cmd::Verify { allow_unattested, keep_workdir, json, .. } => {
+                assert!(allow_unattested && keep_workdir && json);
+            }
+            _ => panic!("expected Verify"),
+        }
+    }
+
+    #[test]
+    fn simulate_tamper_bare_defaults_to_all() {
+        // `default_missing_value = "all"` — the bare flag means "tamper everything".
+        let cli = parse(&["clearhash", "verify", "npm:x@1.0.0", "--simulate-tamper"]).unwrap();
+        match cli.command {
+            Cmd::Verify { simulate_tamper, .. } => {
+                assert!(matches!(simulate_tamper, Some(TamperModeArg::All)));
+            }
+            _ => panic!("expected Verify"),
+        }
+    }
+
+    #[test]
+    fn simulate_tamper_takes_an_explicit_kebab_value() {
+        let cli = parse(&["clearhash", "verify", "npm:x@1.0.0", "--simulate-tamper=content-swap"]).unwrap();
+        match cli.command {
+            Cmd::Verify { simulate_tamper, .. } => {
+                assert!(matches!(simulate_tamper, Some(TamperModeArg::ContentSwap)));
+            }
+            _ => panic!("expected Verify"),
+        }
+    }
+
+    #[test]
+    fn simulate_tamper_requires_equals_for_its_value() {
+        // `require_equals = true`: the space form must NOT consume the next token as
+        // the tamper mode (it would otherwise swallow a positional). Bare flag is fine.
+        let cli = parse(&["clearhash", "verify", "npm:x@1.0.0", "--simulate-tamper"]).unwrap();
+        assert!(matches!(cli.command, Cmd::Verify { simulate_tamper: Some(TamperModeArg::All), .. }));
+    }
+
+    #[test]
+    fn rejects_unknown_tamper_mode() {
+        assert!(parse(&["clearhash", "verify", "npm:x@1.0.0", "--simulate-tamper=nonsense"]).is_err());
+    }
+
+    #[test]
+    fn verify_requires_a_package_argument() {
+        assert!(parse(&["clearhash", "verify"]).is_err());
+    }
+
+    #[test]
+    fn inspect_parses_with_json_and_global_verbose() {
+        let cli = parse(&["clearhash", "--verbose", "inspect", "npm:left-pad@1.0.0", "--json"]).unwrap();
+        assert!(cli.verbose);
+        match cli.command {
+            Cmd::Inspect { package, json } => {
+                assert_eq!(package, "npm:left-pad@1.0.0");
+                assert!(json);
+            }
+            _ => panic!("expected Inspect"),
+        }
+    }
+
+    #[test]
+    fn tamper_mode_arg_maps_onto_every_core_mode() {
+        assert!(matches!(TamperMode::from(TamperModeArg::InjectedPayload), TamperMode::InjectedPayload));
+        assert!(matches!(TamperMode::from(TamperModeArg::ContentSwap), TamperMode::ContentSwap));
+        assert!(matches!(TamperMode::from(TamperModeArg::ModeFlip), TamperMode::ModeFlip));
+        assert!(matches!(TamperMode::from(TamperModeArg::Deletion), TamperMode::Deletion));
+        assert!(matches!(TamperMode::from(TamperModeArg::All), TamperMode::All));
+    }
+
+    #[test]
+    fn cli_definition_is_valid() {
+        // Catches clap configuration errors (conflicting args, bad value parsers)
+        // at test time instead of first run.
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
+    }
+}

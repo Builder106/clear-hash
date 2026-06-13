@@ -18,3 +18,8 @@ sha2 = { workspace = true }
 thiserror = { workspace = true }
 tempfile = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+# Local HTTP mock server so fetch()/resolve_latest_version can be exercised
+# (success, 404 -> None attestation, BadStatus) without hitting a real registry.
+wiremock = "0.6"
