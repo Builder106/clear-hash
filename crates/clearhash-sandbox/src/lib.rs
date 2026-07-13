@@ -22,8 +22,8 @@ use std::time::Duration;
 
 pub mod simulate_tamper;
 
-use bollard::container::{Config, CreateContainerOptions, LogsOptions, WaitContainerOptions};
-use bollard::image::CreateImageOptions;
+use bollard::models::{ContainerCreateBody, HostConfig};
+use bollard::query_parameters::{CreateContainerOptions, CreateImageOptions, LogsOptions, WaitContainerOptions};
 use bollard::Docker;
 use clearhash_core::{tree, FileTreeHash, PackageRef, ProvenanceClaim, VerifyOutcome};
 use clearhash_ecosystems::{AdapterError, EcosystemAdapter};
@@ -220,7 +220,7 @@ async fn clone_and_pin(repo: &str, commit: &str, dest: &Path) -> Result<(), Sand
 
 async fn pull_image(docker: &Docker, image: &str) -> Result<(), SandboxError> {
     let options = CreateImageOptions {
-        from_image: image,
+        from_image: Some(image.to_string()),
         ..Default::default()
     };
     let mut stream = docker.create_image(Some(options), None, None);
@@ -254,11 +254,11 @@ async fn create_and_run(
     let source_abs = std::fs::canonicalize(source_dir)?;
     let bind = format!("{}:/src", source_abs.display());
 
-    let config: Config<String> = Config {
+    let config: ContainerCreateBody = ContainerCreateBody {
         image: Some(adapter.rebuild_image().to_string()),
         cmd: Some(vec!["/bin/sh".into(), "-c".into(), script]),
         working_dir: Some("/src".into()),
-        host_config: Some(bollard::secret::HostConfig {
+        host_config: Some(HostConfig {
             binds: Some(vec![bind]),
             auto_remove: Some(false),
             ..Default::default()
@@ -268,11 +268,11 @@ async fn create_and_run(
 
     let name = format!("clearhash-rebuild-{}", &claim.commit_sha[..12]);
     let opts = CreateContainerOptions {
-        name: name.clone(),
-        platform: None,
+        name: Some(name.clone()),
+        ..Default::default()
     };
     let created = docker.create_container(Some(opts), config).await?;
-    docker.start_container::<String>(&created.id, None).await?;
+    docker.start_container(&created.id, None).await?;
     Ok(created.id)
 }
 
@@ -280,13 +280,13 @@ async fn wait_and_collect_logs(
     docker: &Docker,
     container_id: &str,
 ) -> Result<String, SandboxError> {
-    let mut wait = docker.wait_container(container_id, None::<WaitContainerOptions<String>>);
+    let mut wait = docker.wait_container(container_id, None::<WaitContainerOptions>);
     // Drain wait stream so the container has exited before we collect logs.
     while wait.next().await.is_some() {}
 
     let mut log_stream = docker.logs(
         container_id,
-        Some(LogsOptions::<String> {
+        Some(LogsOptions {
             stdout: true,
             stderr: true,
             tail: "200".into(),
@@ -314,8 +314,8 @@ async fn download_artifacts(
     container_path: &str,
     dest: &Path,
 ) -> Result<(), SandboxError> {
-    let options = bollard::container::DownloadFromContainerOptions {
-        path: container_path,
+    let options = bollard::query_parameters::DownloadFromContainerOptions {
+        path: container_path.to_string(),
     };
     let mut stream = docker.download_from_container(container_id, Some(options));
     let mut tar_bytes: Vec<u8> = Vec::new();

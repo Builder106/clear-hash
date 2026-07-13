@@ -18,6 +18,6 @@ flate2 = { workspace = true }
 tar = { workspace = true }
 tempfile = { workspace = true }
 walkdir = { workspace = true }
-bollard = "0.17"
+bollard = "0.21"
 futures-util = "0.3"
 bytes = { workspace = true }

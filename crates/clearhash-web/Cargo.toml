@@ -25,7 +25,7 @@ clearhash-provenance = { workspace = true }
 tokio = { workspace = true }
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "query", "macros"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["fs", "trace", "compression-gzip", "set-header", "limit", "timeout"] }
+tower-http = { version = "0.7", features = ["fs", "trace", "compression-gzip", "set-header", "limit", "timeout"] }
 maud = { version = "0.27", features = ["axum"] }
 
 serde = { workspace = true }
@@ -36,4 +36,4 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 # rate-limiting helper
-governor = "0.7"
+governor = "0.10"
