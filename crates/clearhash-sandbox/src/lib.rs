@@ -23,7 +23,9 @@ use std::time::Duration;
 pub mod simulate_tamper;
 
 use bollard::models::{ContainerCreateBody, HostConfig};
-use bollard::query_parameters::{CreateContainerOptions, CreateImageOptions, LogsOptions, WaitContainerOptions};
+use bollard::query_parameters::{
+    CreateContainerOptions, CreateImageOptions, LogsOptions, WaitContainerOptions,
+};
 use bollard::Docker;
 use clearhash_core::{tree, FileTreeHash, PackageRef, ProvenanceClaim, VerifyOutcome};
 use clearhash_ecosystems::{AdapterError, EcosystemAdapter};
