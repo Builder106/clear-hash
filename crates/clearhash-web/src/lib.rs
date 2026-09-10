@@ -70,6 +70,59 @@ pub fn app(state: AppState, assets_dir: &str) -> Router {
         .layer(TraceLayer::new_for_http())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::Request;
+    use tower::ServiceExt;
+
+    fn test_app() -> Router {
+        let assets_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        app(AppState::default(), assets_dir.to_str().unwrap())
+    }
+
+    async fn response(uri: &str) -> Response {
+        test_app()
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn health_route_returns_ok() {
+        let response = response("/healthz").await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(body.as_ref(), b"ok");
+    }
+
+    #[tokio::test]
+    async fn static_asset_route_serves_known_asset() {
+        let response = response("/assets/favicon.svg").await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get("content-type")
+                .and_then(|value| value.to_str().ok()),
+            Some("image/svg+xml")
+        );
+    }
+
+    #[tokio::test]
+    async fn existing_pages_and_api_routes_are_reachable() {
+        assert_eq!(response("/").await.status(), StatusCode::OK);
+        assert_eq!(response("/inspect").await.status(), StatusCode::OK);
+        assert_eq!(
+            response("/api/inspect").await.status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+}
+
 async fn healthz() -> &'static str {
     "ok"
 }
