@@ -99,32 +99,9 @@ package.
 
 ## How it works
 
-```mermaid
-sequenceDiagram
-    participant CLI as clearhash CLI
-    participant Reg as Registry (npm / PyPI / cratesio)
-    participant Sig as Sigstore + Rekor
-    participant Git as Source Git Repo
-    participant Docker
+![ClearHash package verification flow](assets/diagrams/verification-flow.png)
 
-    CLI->>Reg: fetch artifact (.tgz)
-    CLI->>Reg: fetch SLSA attestation bundle
-    CLI->>Sig: verify cert chain (Fulcio)
-    Sig-->>CLI: workflow identity URI + Rekor log index
-    Note over CLI: cross-check: workflow URI's<br/>repo == attested source repo
-    CLI->>Git: git clone + checkout attested commit
-    Note over CLI: verify HEAD == attested commit
-    CLI->>Docker: pull pinned rebuild image
-    CLI->>Docker: run ecosystem build script (npm pack / pip build / cargo package)
-    Docker-->>CLI: rebuilt artifact (.tgz / sdist / .crate)
-    CLI->>CLI: extract both archives, normalize (strip mtimes, scrub registry metadata)
-    CLI->>CLI: Merkle-hash both trees
-    alt hashes match
-        CLI-->>User: ✓ MATCH (exit 0)
-    else hashes differ
-        CLI-->>User: ✗ MISMATCH + per-file diff (exit 1)
-    end
-```
+The CLI downloads a registry artifact and its SLSA attestation, verifies Fulcio and Rekor evidence, and checks that the workflow URI names the attested source repository. It checks out the attested commit, rebuilds in a pinned Docker image, normalizes both archives, and compares their Merkle-hashed trees. A match exits 0; a mismatch exits 1 with a per-file diff. [Editable HTML source](assets/diagrams/verification-flow.html).
 
 The comparison model is **file-tree content hash**, not byte-identical tarball SHA-256.
 Strict byte equality is difficult to achieve reliably due to npm package ordering, gzip compression levels, and registry-injected `package.json` metadata variations between `npm pack` invocations. ClearHash normalizes both sides (strips timestamps, normalizes file permissions, and drops registry-injected fields) and compares a cryptographic hash tree over the resulting file tree.

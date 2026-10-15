@@ -4,6 +4,10 @@
 > things happen — retrospectives need this raw material to land.
 > Reverse-chronological; one paragraph max per entry.
 
+## 2026-10-13: Replaced README Mermaid diagrams #decision
+
+The README verification sequence is now a provenance, source, rebuild, and comparison figure with a PNG embed and editable HTML source. The result node keeps both exit paths, while adjacent text names the Fulcio/Rekor checks, source commit, normalization, and per-file diff.
+
 ## 2026-09-07 — Kept the Axum HTTP boundary in router tests #decision
 
 Reviewed the `crates/clearhash-web/src/lib.rs` `#[cfg(test)]` oneshot coverage against the current `app()` routes: `/`, `/inspect`, `/api/inspect`, `/healthz`, and `/assets/*`. Kept the production API unchanged and added only the missing deterministic assertion for a known static asset's status and content type; the test resolves the repository-level fixture from `CARGO_MANIFEST_DIR` because package tests do not run with the repository root as their working directory. The focused boundary now covers health status/body, page and API validation reachability, and static assets without browser E2E or live services; it remains separate from the pure core crate's 100% coverage gate.

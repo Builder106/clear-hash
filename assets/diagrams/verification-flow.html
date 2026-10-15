@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Verify a published package</title>
+<style>body{margin:0;padding:24px;background:#F8FAFC;color:#0F172A;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{max-width:960px;min-width:0;margin:0 auto}.figure-scroll{width:100%;overflow-x:auto}svg{display:block;width:100%;min-width:960px}@media print{.figure-scroll{overflow-x:visible}svg{min-width:0}}</style></head>
+<body><main><div class="figure-scroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 600" role="img" aria-labelledby="verification-flow-title verification-flow-desc">
+<title id="verification-flow-title">Verify a published package</title>
+<desc id="verification-flow-desc">Provenance checks and a pinned rebuild lead to a normalized tree comparison. The registry artifact is compared with a source-built archive. A mismatch includes per-file differences.</desc>
+<defs><marker id="verification-flow-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path d="M1 1 L7 4 L1 7" fill="none" stroke="#0369A1" stroke-width="1.5"/></marker></defs>
+<rect width="960" height="600" fill="#FFFFFF"/>
+<text x="40" y="52" font-size="27" font-weight="700" fill="#0F172A">Verify a published package</text>
+<text x="40" y="80" font-size="14" font-weight="400" fill="#475569">Provenance checks and a pinned rebuild lead to a normalized tree comparison.</text>
+<line x1="40" y1="94" x2="920" y2="94" stroke="#CBD5E1"/>
+<path d="M274 226 H338" fill="none" stroke="#0369A1" stroke-width="1.8" marker-end="url(#verification-flow-arrow)"/>
+<path d="M600 226 H674" fill="none" stroke="#0369A1" stroke-width="1.8" marker-end="url(#verification-flow-arrow)"/>
+<path d="M786 298 V350" fill="none" stroke="#0369A1" stroke-width="1.8" marker-end="url(#verification-flow-arrow)"/>
+<path d="M674 414 H600" fill="none" stroke="#0369A1" stroke-width="1.8" marker-end="url(#verification-flow-arrow)"/>
+<path d="M338 414 H274" fill="none" stroke="#0369A1" stroke-width="1.8" marker-end="url(#verification-flow-arrow)"/>
+<rect x="40" y="174" width="234" height="124" rx="6" fill="#FFFFFF" stroke="#B8C5D2" stroke-width="1.2"/>
+<text x="54" y="201" font-size="15" font-weight="700" fill="#0F172A">Registry</text>
+<text x="54" y="224" font-size="12" font-weight="400" fill="#0F172A">Artifact + SLSA bundle</text>
+<text x="54" y="241" font-size="12" font-weight="400" fill="#0F172A">npm / PyPI / crates.io</text>
+<rect x="338" y="150" width="262" height="148" rx="6" fill="#E0F2FE" stroke="#0369A1" stroke-width="1.2"/>
+<text x="352" y="177" font-size="15" font-weight="700" fill="#0F172A">Sigstore + Rekor</text>
+<text x="352" y="200" font-size="12" font-weight="400" fill="#0F172A">Fulcio certificate and log index</text>
+<text x="352" y="217" font-size="12" font-weight="400" fill="#0F172A">Workflow repo = attested repo</text>
+<rect x="674" y="174" width="222" height="124" rx="6" fill="#FFFFFF" stroke="#B8C5D2" stroke-width="1.2"/>
+<text x="688" y="201" font-size="15" font-weight="700" fill="#0F172A">Source Git repo</text>
+<text x="688" y="224" font-size="12" font-weight="400" fill="#0F172A">Clone attested commit</text>
+<text x="688" y="241" font-size="12" font-weight="400" fill="#0F172A">Verify HEAD</text>
+<rect x="674" y="350" width="222" height="128" rx="6" fill="#FFFFFF" stroke="#B8C5D2" stroke-width="1.2"/>
+<text x="688" y="377" font-size="15" font-weight="700" fill="#0F172A">Pinned Docker rebuild</text>
+<text x="688" y="400" font-size="12" font-weight="400" fill="#0F172A">npm pack / pip build /</text>
+<text x="688" y="417" font-size="12" font-weight="400" fill="#0F172A">cargo package</text>
+<rect x="338" y="350" width="262" height="128" rx="6" fill="#FFFFFF" stroke="#B8C5D2" stroke-width="1.2"/>
+<text x="352" y="377" font-size="15" font-weight="700" fill="#0F172A">Normalize + Merkle hash</text>
+<text x="352" y="400" font-size="12" font-weight="400" fill="#0F172A">Extract both archives; strip mtimes</text>
+<text x="352" y="417" font-size="12" font-weight="400" fill="#0F172A">and registry metadata</text>
+<rect x="40" y="350" width="234" height="128" rx="6" fill="#E0F2FE" stroke="#0369A1" stroke-width="1.2"/>
+<text x="54" y="377" font-size="15" font-weight="700" fill="#0F172A">Verdict</text>
+<text x="54" y="400" font-size="12" font-weight="400" fill="#0F172A">MATCH: exit 0</text>
+<text x="54" y="417" font-size="12" font-weight="400" fill="#0F172A">MISMATCH: diff, exit 1</text>
+<line x1="40" y1="542" x2="920" y2="542" stroke="#CBD5E1"/>
+<text x="40" y="566" font-size="12" font-weight="400" fill="#475569">The registry artifact is compared with a source-built archive. A mismatch includes per-file differences.</text>
+</svg></div></main></body></html>
