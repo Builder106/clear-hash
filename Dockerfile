@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # -------- Build stage --------
-FROM rust:1.98-bookworm AS build
+FROM rust:1.99-bookworm AS build
 
 WORKDIR /work
 
