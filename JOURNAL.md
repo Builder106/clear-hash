@@ -4,6 +4,10 @@
 > things happen — retrospectives need this raw material to land.
 > Reverse-chronological; one paragraph max per entry.
 
+## 2026-10-19: Correct the verification spec #decision
+
+The spec's Mermaid chart repeated the numbered list under it, so it is gone. The list now says what the code does: ClearHash checks that a Rekor entry is present (inclusion proofs come in v1.1), clones and pins the commit on the host before the Docker rebuild, and hashes files by content and executable bit rather than normalizing line endings.
+
 ## 2026-10-19: Replace the verification diagram with a list #decision
 
 The verification flow is a straight five-step chain, which a numbered list shows better than six boxes in a snake. The list also corrects the old wording that ClearHash verifies Rekor: it checks that a Rekor entry is present, and inclusion proofs are planned for v1.1.
