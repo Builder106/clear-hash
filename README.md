@@ -99,9 +99,11 @@ package.
 
 ## How it works
 
-![ClearHash package verification flow](assets/diagrams/verification-flow.png)
-
-The CLI downloads a registry artifact and its SLSA attestation, verifies Fulcio and Rekor evidence, and checks that the workflow URI names the attested source repository. It checks out the attested commit, rebuilds in a pinned Docker image, normalizes both archives, and compares their Merkle-hashed trees. A match exits 0; a mismatch exits 1 with a per-file diff. [Editable HTML source](assets/diagrams/verification-flow.html).
+1. Download the artifact and its SLSA attestation from npm, PyPI, or crates.io.
+2. Check that the attestation's certificate was issued by Fulcio, that it references a Rekor log entry, and that its workflow URI names the source repository.
+3. Clone the source repository, check out the attested commit, and confirm that `HEAD` matches it.
+4. Rebuild the package in a pinned Docker image (`npm pack`, `python -m build --sdist`, or `cargo package`).
+5. Extract both archives, drop the metadata the registry adds, and compare their Merkle-hashed file trees. A match exits 0. A mismatch exits 1 with a per-file diff.
 
 The comparison model is **file-tree content hash**, not byte-identical tarball SHA-256.
 Strict byte equality is difficult to achieve reliably due to npm package ordering, gzip compression levels, and registry-injected `package.json` metadata variations between `npm pack` invocations. ClearHash normalizes both sides (strips timestamps, normalizes file permissions, and drops registry-injected fields) and compares a cryptographic hash tree over the resulting file tree.

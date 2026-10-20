@@ -4,6 +4,10 @@
 > things happen — retrospectives need this raw material to land.
 > Reverse-chronological; one paragraph max per entry.
 
+## 2026-10-19: Replace the verification diagram with a list #decision
+
+The verification flow is a straight five-step chain, which a numbered list shows better than six boxes in a snake. The list also corrects the old wording that ClearHash verifies Rekor: it checks that a Rekor entry is present, and inclusion proofs are planned for v1.1.
+
 ## 2026-10-13: Replaced README Mermaid diagrams #decision
 
 The README verification sequence is now a provenance, source, rebuild, and comparison figure with a PNG embed and editable HTML source. The result node keeps both exit paths, while adjacent text names the Fulcio/Rekor checks, source commit, normalization, and per-file diff.
