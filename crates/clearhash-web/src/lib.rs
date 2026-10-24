@@ -63,10 +63,10 @@ pub fn app(state: AppState, assets_dir: &str) -> Router {
         .nest_service("/assets", get_service(ServeDir::new(assets_dir)))
         .with_state(state)
         .layer(CompressionLayer::new())
-        .layer(
-            #[allow(deprecated)]
-            TimeoutLayer::new(Duration::from_secs(20)),
-        )
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(20),
+        ))
         .layer(TraceLayer::new_for_http())
 }
 
