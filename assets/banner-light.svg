@@ -9,8 +9,8 @@
 
   <g transform="translate(80, 120)">
     <path d="M 90,0 L 180,30 L 180,120 Q 180,170 90,210 Q 0,170 0,120 L 0,30 Z"
-          fill="none" stroke="#0284c7" stroke-width="4"/>
-    <text x="90" y="135" text-anchor="middle" fill="#0284c7"
+          fill="none" stroke="#16a34a" stroke-width="4"/>
+    <text x="90" y="135" text-anchor="middle" fill="#16a34a"
           font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="64" font-weight="700">#</text>
   </g>
 

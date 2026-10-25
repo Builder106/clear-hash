@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" width="1200" height="420">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0a0e1a"/>
-      <stop offset="1" stop-color="#11182e"/>
+      <stop offset="0" stop-color="#0a0e0a"/>
+      <stop offset="1" stop-color="#11151a"/>
     </linearGradient>
   </defs>
   <rect width="1200" height="420" fill="url(#bg)"/>
@@ -10,8 +10,8 @@
   <!-- logo mark: shield + hash -->
   <g transform="translate(80, 120)">
     <path d="M 90,0 L 180,30 L 180,120 Q 180,170 90,210 Q 0,170 0,120 L 0,30 Z"
-          fill="none" stroke="#38bdf8" stroke-width="4"/>
-    <text x="90" y="135" text-anchor="middle" fill="#38bdf8"
+          fill="none" stroke="#5eff8b" stroke-width="4"/>
+    <text x="90" y="135" text-anchor="middle" fill="#5eff8b"
           font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="64" font-weight="700">#</text>
   </g>
 
@@ -29,7 +29,7 @@
 
   <!-- terminal-ish snippet -->
   <g transform="translate(320, 290)" font-family="ui-monospace, 'SF Mono', Menlo, monospace">
-    <text x="0" y="0" fill="#64748b" font-size="18">$ </text>
+    <text x="0" y="0" fill="#5eff8b" font-size="18">$ </text>
     <text x="20" y="0" fill="#e2e8f0" font-size="18">clearhash verify </text>
     <text x="200" y="0" fill="#7dd3fc" font-size="18">npm:sigstore@2.3.1</text>
     <text x="0" y="32" fill="#22c55e" font-size="18">✓ MATCH </text>

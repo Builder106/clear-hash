@@ -6,9 +6,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
   <defs>
     <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0"   stop-color="#7dd3fc"/>
-      <stop offset="0.55" stop-color="#a78bfa"/>
-      <stop offset="1"   stop-color="#f472b6"/>
+      <stop offset="0"    stop-color="#5eff8b"/>
+      <stop offset="0.55" stop-color="#3ee072"/>
+      <stop offset="1"    stop-color="#16a34a"/>
     </linearGradient>
     <mask id="hash-mask">
       <!-- white = visible, black = knocked out -->

@@ -4,6 +4,10 @@
 > things happen — retrospectives need this raw material to land.
 > Reverse-chronological; one paragraph max per entry.
 
+## 2026-10-25 — Recolor brand logo to match hacker terminal frontend #decision
+
+Aligned ClearHash's logo assets with the terminal frontend redesign. The previous cyan-to-pink gradient (`#7dd3fc` → `#a78bfa` → `#f472b6`) remained from an early pre-pivot landing and clashed with the phosphor CRT aesthetic. Preserved the shield silhouette and `#` knockout mask geometry, and recolored the linear gradient to transition from terminal prompt green (`#5eff8b`) through mid-phosphor (`#3ee072`) to emerald (`#16a34a`). Regenerated 16×16, 32×32, and 180×180 PNG favicons, updated README banners, and synchronized downstream assets across profile-assets and the portfolio server room.
+
 ## 2026-10-19: Correct the verification spec #decision
 
 The spec's Mermaid chart repeated the numbered list under it, so it is gone. The list now says what the code does: ClearHash checks that a Rekor entry is present (inclusion proofs come in v1.1), clones and pins the commit on the host before the Docker rebuild, and hashes files by content and executable bit rather than normalizing line endings.
