@@ -9,7 +9,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Ecosystems](https://img.shields.io/badge/ecosystems-npm%20%7C%20PyPI%20%7C%20Cargo-7c3aed.svg)
 [![Sigstore](https://img.shields.io/badge/SLSA-Sigstore%20%2B%20Rekor-22c55e.svg)](https://www.sigstore.dev/)
-[![Demo](https://img.shields.io/badge/demo-clear-hash.vercel.app-success.svg)](https://clear-hash.vercel.app/)
+[![Demo](https://img.shields.io/badge/demo-clearhash.vercel.app-success.svg)](https://clearhash.vercel.app/)
 
 > **A digital tamper-proof seal for software.** ClearHash verifies that downloaded packages match their exact original source code byte-for-byte.
 
@@ -113,13 +113,13 @@ Strict byte equality is difficult to achieve reliably due to npm package orderin
 ## Try it without installing
 
 A hosted instance of the **inspect** endpoint runs at
-[**clear-hash.vercel.app**](https://clear-hash.vercel.app). It performs package retrieval and certificate verification in the cloud. The full **verify** flow runs in the CLI because it requires a local Docker engine to perform safe rebuilds.
+[**clearhash.vercel.app**](https://clearhash.vercel.app). It performs package retrieval and certificate verification in the cloud. The full **verify** flow runs in the CLI because it requires a local Docker engine to perform safe rebuilds.
 
 ```bash
-curl 'https://clear-hash.vercel.app/api/inspect?package=npm:sigstore@2.3.1'
+curl 'https://clearhash.vercel.app/api/inspect?package=npm:sigstore@2.3.1'
 ```
 
-Or paste a package into the form at [`/inspect`](https://clear-hash.vercel.app/inspect).
+Or paste a package into the form at [`/inspect`](https://clearhash.vercel.app/inspect).
 
 ## Install the CLI
 

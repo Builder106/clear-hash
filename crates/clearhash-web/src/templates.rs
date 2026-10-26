@@ -834,7 +834,7 @@ pub async fn landing() -> Markup {
                         p { "Programmatic access to the inspect endpoint:" }
                     }
                     pre.log style="padding-left:2.2em;" {
-        "  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">curl</span> '<span class=\"link\">https://clear-hash.vercel.app/api/inspect?package=npm:sigstore@2.3.1</span>'\n"))
+        "  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">curl</span> '<span class=\"link\">https://clearhash.vercel.app/api/inspect?package=npm:sigstore@2.3.1</span>'\n"))
         "  {\n"
         "    \"package\": \"npm:sigstore@2.3.1\",\n"
         "    \"registry_sha256\": " (PreEscaped("<span class=\"dim\">\"1b5041a35f86125db7f872742502470753fd2e1109521b7dbff8a61d229a03c2\"</span>")) ",\n"
