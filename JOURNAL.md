@@ -4,6 +4,10 @@
 > things happen — retrospectives need this raw material to land.
 > Reverse-chronological; one paragraph max per entry.
 
+## 2026-10-27: Scope package publishing permission #ci #security
+
+The workflow defaults to read-only repository access, and its container publish job holds package write permission.
+
 ## 2026-10-26: The live site moved to clearhash.vercel.app #incident
 
 `clear-hash.vercel.app` now returns Vercel's DEPLOYMENT_NOT_FOUND page, and the Vercel CLI no longer finds a project by that name. The site answers at `clearhash.vercel.app`, the homepage set on the GitHub repo, so the README badge, the "Try it without installing" links and the `curl` example on the landing page point there now. This reverses the hyphenated address recorded further down. Check the GitHub homepage or the Vercel dashboard before trusting either name.
