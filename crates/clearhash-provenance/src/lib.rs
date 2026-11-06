@@ -1,21 +1,19 @@
 //! Provenance verification.
 //!
-//! What this crate verifies in v1:
+//! What this crate verifies in v1.1:
 //!   1. The bundle envelope has a well-formed in-toto statement with a (repo, commit) claim.
 //!   2. The bundle carries a Fulcio-issued X.509 leaf certificate.
 //!   3. The leaf cert's SAN includes a GitHub Actions workflow URI consistent with the source repo.
 //!   4. A Rekor transparency-log entry is referenced.
+//!   5. Full Cosign DSSE signature verification over the in-toto statement against the leaf cert's public key.
 //!
-//! What is deferred to v1.1 (with an explicit warning):
-//!   - Full Cosign DSSE signature verification using the leaf cert's public key.
+//! What is deferred to future milestones:
 //!   - Full Rekor Merkle inclusion-proof verification.
-//!
-//! The v1 surface catches the realistic tamper modes (fake/missing cert, mismatched workflow
-//! identity, missing tlog entry) without the implementation surface area of full crypto. v1.1
-//! adds full crypto via the `sigstore` crate.
+//!   - SCT (Signed Certificate Timestamp) verification.
 
 use clearhash_core::ProvenanceClaim;
 use clearhash_ecosystems::{AdapterError, EcosystemAdapter};
+use sigstore::crypto::{CosignVerificationKey, Signature};
 use thiserror::Error;
 use x509_parser::prelude::*;
 
@@ -39,6 +37,18 @@ pub enum ProvenanceError {
     IdentityMismatch { san: String, repo: String },
     #[error("attestation bundle missing Rekor transparency-log entry")]
     MissingRekorEntry,
+    #[error("attestation bundle missing DSSE envelope")]
+    MissingDsseEnvelope,
+    #[error("DSSE envelope has no signatures")]
+    MissingDsseSignature,
+    #[error("DSSE payload base64 decode failed: {0}")]
+    BadDssePayload(String),
+    #[error("DSSE signature base64 decode failed: {0}")]
+    BadDsseSignature(String),
+    #[error("leaf certificate public key invalid: {0}")]
+    BadPublicKey(String),
+    #[error("DSSE signature verification failed")]
+    SignatureVerificationFailed,
 }
 
 /// Extracted Sigstore identity for human-readable output.
@@ -66,28 +76,177 @@ pub async fn verify(
         return Err(ProvenanceError::BadCommitSha(claim.commit_sha));
     }
 
+    let root: serde_json::Value =
+        serde_json::from_slice(bundle).map_err(|_| ProvenanceError::MissingCertChain)?;
+
     // Step B: extract & validate the Sigstore identity material.
-    let identity = extract_identity(bundle, &claim)?;
+    let (identity, cert_der) = extract_identity(&root, &claim)?;
+
+    // Step C: full Cosign DSSE signature verification over the in-toto statement.
+    verify_dsse(&root, &cert_der)?;
 
     tracing::warn!(
-        "v1 provenance: validated structural + cert-chain + identity. \
-         Full Cosign signature + Rekor inclusion proof verification is v1.1."
+        "provenance: validated Cosign DSSE signature + cert-chain + identity. \
+         Full Rekor inclusion proof verification is next."
     );
 
     Ok(VerifyOk { claim, identity })
 }
 
+/// Compute canonical DSSE Pre-Authentication Encoding (PAE):
+/// `"DSSEv1" + " " + len(type) + " " + type + " " + len(body) + " " + body`
+pub fn compute_dsse_pae(payload_type: &str, payload: &[u8]) -> Vec<u8> {
+    let header = format!(
+        "DSSEv1 {} {} {} ",
+        payload_type.len(),
+        payload_type,
+        payload.len()
+    );
+    let mut pae = header.into_bytes();
+    pae.extend_from_slice(payload);
+    pae
+}
+
+/// Convert a 64-byte raw IEEE P1363 ECDSA signature (r || s) into an ASN.1 DER SEQUENCE.
+fn p1363_to_der(raw: &[u8]) -> Option<Vec<u8>> {
+    if raw.len() != 64 {
+        return None;
+    }
+    let (r, s) = raw.split_at(32);
+    fn encode_int(bytes: &[u8]) -> Vec<u8> {
+        let mut b = bytes;
+        while b.len() > 1 && b[0] == 0 {
+            b = &b[1..];
+        }
+        let mut out = Vec::with_capacity(b.len() + 3);
+        out.push(0x02);
+        if b[0] >= 0x80 {
+            out.push((b.len() + 1) as u8);
+            out.push(0x00);
+        } else {
+            out.push(b.len() as u8);
+        }
+        out.extend_from_slice(b);
+        out
+    }
+    let r_der = encode_int(r);
+    let s_der = encode_int(s);
+    let mut seq = Vec::with_capacity(2 + r_der.len() + s_der.len());
+    seq.push(0x30);
+    seq.push((r_der.len() + s_der.len()) as u8);
+    seq.extend_from_slice(&r_der);
+    seq.extend_from_slice(&s_der);
+    Some(seq)
+}
+
+/// Verify the DSSE signature inside the bundle over the in-toto statement against the leaf cert's public key.
+fn verify_dsse(root: &serde_json::Value, cert_der: &[u8]) -> Result<(), ProvenanceError> {
+    let dsse = find_dsse_envelope(root).ok_or(ProvenanceError::MissingDsseEnvelope)?;
+
+    let payload_type = dsse
+        .get("payloadType")
+        .and_then(|v| v.as_str())
+        .ok_or(ProvenanceError::MissingDsseEnvelope)?;
+
+    let payload_b64 = dsse
+        .get("payload")
+        .and_then(|v| v.as_str())
+        .ok_or(ProvenanceError::MissingDsseEnvelope)?;
+
+    let payload_bytes = base64_decode(payload_b64).map_err(ProvenanceError::BadDssePayload)?;
+
+    let signatures = dsse
+        .get("signatures")
+        .and_then(|v| v.as_array())
+        .ok_or(ProvenanceError::MissingDsseSignature)?;
+
+    if signatures.is_empty() {
+        return Err(ProvenanceError::MissingDsseSignature);
+    }
+
+    let (_, leaf) = X509Certificate::from_der(cert_der)
+        .map_err(|e| ProvenanceError::BadLeafCert(e.to_string()))?;
+
+    let spki_der = leaf.tbs_certificate.subject_pki.raw;
+    let verification_key = CosignVerificationKey::try_from_der(spki_der)
+        .map_err(|e| ProvenanceError::BadPublicKey(e.to_string()))?;
+
+    let pae = compute_dsse_pae(payload_type, &payload_bytes);
+
+    let mut verified = false;
+    for sig_obj in signatures {
+        let sig_b64 = match sig_obj.get("sig").and_then(|s| s.as_str()) {
+            Some(s) => s,
+            None => continue,
+        };
+        let sig_bytes = match base64_decode(sig_b64) {
+            Ok(b) => b,
+            Err(e) => return Err(ProvenanceError::BadDsseSignature(e)),
+        };
+
+        if verification_key
+            .verify_signature(Signature::Raw(&sig_bytes), &pae)
+            .is_ok()
+        {
+            verified = true;
+            break;
+        }
+
+        // If the signature was raw IEEE P1363 (64 bytes), try converting to ASN.1 DER.
+        if sig_bytes.len() == 64 {
+            if let Some(der_sig) = p1363_to_der(&sig_bytes) {
+                if verification_key
+                    .verify_signature(Signature::Raw(&der_sig), &pae)
+                    .is_ok()
+                {
+                    verified = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if !verified {
+        return Err(ProvenanceError::SignatureVerificationFailed);
+    }
+
+    Ok(())
+}
+
+/// Find the bundle's `dsseEnvelope` regardless of envelope variant (direct or nested under `attestations`).
+fn find_dsse_envelope(root: &serde_json::Value) -> Option<&serde_json::Value> {
+    if let Some(dsse) = root.get("dsseEnvelope") {
+        return Some(dsse);
+    }
+    if let Some(arr) = root.get("attestations").and_then(|a| a.as_array()) {
+        for att in arr {
+            let is_slsa = att
+                .get("predicateType")
+                .and_then(|p| p.as_str())
+                .map(|s| s.contains("slsa.dev/provenance"))
+                .unwrap_or(false);
+            if !is_slsa {
+                continue;
+            }
+            if let Some(dsse) = att.pointer("/bundle/dsseEnvelope") {
+                return Some(dsse);
+            }
+            if let Some(dsse) = att.get("dsseEnvelope") {
+                return Some(dsse);
+            }
+        }
+    }
+    root.pointer("/bundle/dsseEnvelope")
+}
+
 /// Find the bundle's `verificationMaterial` regardless of which envelope variant npm/PyPI used,
 /// then pull the leaf cert + Rekor log index.
 fn extract_identity(
-    bundle: &[u8],
+    root: &serde_json::Value,
     claim: &ProvenanceClaim,
-) -> Result<VerifiedIdentity, ProvenanceError> {
-    let root: serde_json::Value =
-        serde_json::from_slice(bundle).map_err(|_| ProvenanceError::MissingCertChain)?;
-
+) -> Result<(VerifiedIdentity, Vec<u8>), ProvenanceError> {
     // Locate the verificationMaterial. It may be nested under attestations[i].bundle.
-    let vm = find_verification_material(&root).ok_or(ProvenanceError::MissingCertChain)?;
+    let vm = find_verification_material(root).ok_or(ProvenanceError::MissingCertChain)?;
 
     // ---- Cert chain ----
     let cert_b64 = vm
@@ -149,11 +308,14 @@ fn extract_identity(
         return Err(ProvenanceError::MissingRekorEntry);
     }
 
-    Ok(VerifiedIdentity {
-        workflow_uri,
-        issuer_dn,
-        rekor_log_index,
-    })
+    Ok((
+        VerifiedIdentity {
+            workflow_uri,
+            issuer_dn,
+            rekor_log_index,
+        },
+        cert_der,
+    ))
 }
 
 fn find_verification_material(root: &serde_json::Value) -> Option<&serde_json::Value> {
@@ -200,12 +362,12 @@ fn gh_repo_segment(s: &str) -> Option<String> {
 
 /// Standard-alphabet base64 decoder. (Same trick as the npm adapter — avoids a `base64` dep.)
 fn base64_decode(s: &str) -> Result<Vec<u8>, String> {
-    let s = s.trim().as_bytes();
-    if !s.len().is_multiple_of(4) {
+    let clean: Vec<u8> = s.bytes().filter(|&b| !b.is_ascii_whitespace()).collect();
+    if !clean.len().is_multiple_of(4) {
         return Err("base64: length not multiple of 4".into());
     }
-    let mut out = Vec::with_capacity(s.len() / 4 * 3);
-    let (chunks, _remainder) = s.as_chunks::<4>();
+    let mut out = Vec::with_capacity(clean.len() / 4 * 3);
+    let (chunks, _remainder) = clean.as_chunks::<4>();
     for chunk in chunks {
         let mut buf = [0u32; 4];
         for (i, &b) in chunk.iter().enumerate() {
@@ -234,6 +396,173 @@ fn base64_decode(s: &str) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clearhash_ecosystems::npm::NpmAdapter;
+
+    const FIXTURE_SIGSTORE: &str =
+        include_str!("../tests/fixtures/npm_sigstore_2.3.1_attestation.json");
+
+    #[test]
+    fn pae_spec_test_vector() {
+        let pae = compute_dsse_pae("http://example.com/HelloWorld", b"hello world");
+        assert_eq!(
+            pae,
+            b"DSSEv1 29 http://example.com/HelloWorld 11 hello world"
+        );
+    }
+
+    #[tokio::test]
+    async fn verifies_real_cosign_dsse_signature() {
+        let res = verify(&NpmAdapter, FIXTURE_SIGSTORE.as_bytes())
+            .await
+            .expect("real signature must verify");
+        assert_eq!(
+            res.claim.commit_sha,
+            "46e7056ff9912ebfee5298d94024895a9fea76c0"
+        );
+        assert_eq!(
+            res.identity.workflow_uri.as_deref(),
+            Some("https://github.com/sigstore/sigstore-js/.github/workflows/release.yml@refs/heads/main")
+        );
+        assert_eq!(res.identity.rekor_log_index, Some(94408136));
+    }
+
+    fn base64_encode(data: &[u8]) -> String {
+        const TABLE: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut out = String::new();
+        let mut i = 0;
+        while i < data.len() {
+            let b0 = data[i] as u32;
+            let b1 = if i + 1 < data.len() {
+                data[i + 1] as u32
+            } else {
+                0
+            };
+            let b2 = if i + 2 < data.len() {
+                data[i + 2] as u32
+            } else {
+                0
+            };
+            let triple = (b0 << 16) | (b1 << 8) | b2;
+            out.push(TABLE[((triple >> 18) & 0x3F) as usize] as char);
+            out.push(TABLE[((triple >> 12) & 0x3F) as usize] as char);
+            if i + 1 < data.len() {
+                out.push(TABLE[((triple >> 6) & 0x3F) as usize] as char);
+            } else {
+                out.push('=');
+            }
+            if i + 2 < data.len() {
+                out.push(TABLE[(triple & 0x3F) as usize] as char);
+            } else {
+                out.push('=');
+            }
+            i += 3;
+        }
+        out
+    }
+
+    #[tokio::test]
+    async fn rejects_tampered_dsse_payload() {
+        let mut bundle: serde_json::Value = serde_json::from_str(FIXTURE_SIGSTORE).unwrap();
+        // Modify a string inside the valid in-toto statement JSON, keeping JSON valid
+        let payload_str = bundle
+            .pointer_mut("/attestations/1/bundle/dsseEnvelope/payload")
+            .unwrap();
+        let raw_payload = base64_decode(payload_str.as_str().unwrap()).unwrap();
+        let payload_text = String::from_utf8(raw_payload).unwrap();
+        let tampered_text = payload_text.replace("github-hosted", "github-hosteX");
+        assert_ne!(payload_text, tampered_text);
+        let clean_b64 = base64_encode(tampered_text.as_bytes());
+        *payload_str = serde_json::Value::String(clean_b64);
+
+        let err = verify(&NpmAdapter, &serde_json::to_vec(&bundle).unwrap())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ProvenanceError::SignatureVerificationFailed));
+    }
+
+    #[tokio::test]
+    async fn rejects_tampered_dsse_signature() {
+        let mut bundle: serde_json::Value = serde_json::from_str(FIXTURE_SIGSTORE).unwrap();
+        // Flip a byte in the signature
+        let sig_str = bundle
+            .pointer_mut("/attestations/1/bundle/dsseEnvelope/signatures/0/sig")
+            .unwrap();
+        let mut bytes = sig_str.as_str().unwrap().to_string().into_bytes();
+        bytes[20] = if bytes[20] == b'A' { b'B' } else { b'A' };
+        *sig_str = serde_json::Value::String(String::from_utf8(bytes).unwrap());
+
+        let err = verify(&NpmAdapter, &serde_json::to_vec(&bundle).unwrap())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ProvenanceError::SignatureVerificationFailed));
+    }
+
+    #[tokio::test]
+    async fn rejects_missing_dsse_envelope() {
+        let mut bundle: serde_json::Value = serde_json::from_str(FIXTURE_SIGSTORE).unwrap();
+        bundle
+            .pointer_mut("/attestations/1/bundle")
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove("dsseEnvelope");
+
+        struct Stub;
+        #[async_trait::async_trait]
+        impl EcosystemAdapter for Stub {
+            fn ecosystem(&self) -> clearhash_core::Ecosystem {
+                clearhash_core::Ecosystem::Npm
+            }
+            fn artifact_url(&self, _: &clearhash_core::PackageRef) -> url::Url {
+                "https://x".parse().unwrap()
+            }
+            fn attestation_url(&self, _: &clearhash_core::PackageRef) -> Option<url::Url> {
+                None
+            }
+            fn parse_attestation(&self, _: &[u8]) -> Result<ProvenanceClaim, AdapterError> {
+                Ok(ProvenanceClaim {
+                    source_repo: "git+https://github.com/sigstore/sigstore-js".into(),
+                    commit_sha: "46e7056ff9912ebfee5298d94024895a9fea76c0".into(),
+                    builder_id: "x".into(),
+                    signed_at: chrono::Utc::now(),
+                })
+            }
+            fn rebuild_image(&self) -> &'static str {
+                "x"
+            }
+            fn rebuild_script(&self) -> &'static str {
+                "x"
+            }
+            fn built_artifact_dir(&self) -> &'static str {
+                "/out"
+            }
+            fn strip_archive_prefix(&self, _: &clearhash_core::PackageRef) -> Option<String> {
+                None
+            }
+            fn ignore_paths(&self) -> &'static [&'static str] {
+                &[]
+            }
+        }
+
+        let err = verify(&Stub, &serde_json::to_vec(&bundle).unwrap())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ProvenanceError::MissingDsseEnvelope));
+    }
+
+    #[tokio::test]
+    async fn rejects_empty_dsse_signatures() {
+        let mut bundle: serde_json::Value = serde_json::from_str(FIXTURE_SIGSTORE).unwrap();
+        *bundle
+            .pointer_mut("/attestations/1/bundle/dsseEnvelope/signatures")
+            .unwrap() = serde_json::json!([]);
+
+        let err = verify(&NpmAdapter, &serde_json::to_vec(&bundle).unwrap())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ProvenanceError::MissingDsseSignature));
+    }
 
     #[test]
     fn gh_repo_segment_basic() {

@@ -7,7 +7,7 @@ This document details the cryptographic attestation pipeline, container isolatio
 ClearHash verifies supply-chain integrity through a five-stage pipeline:
 
 1. **Registry Artifact Retrieval**: ClearHash downloads the package tarball from the upstream registry (npm, PyPI, or Cargo) and calculates its SHA-256 digest.
-2. **Attestation Validation**: ClearHash extracts the SLSA provenance statement, checks the leaf certificate issuer against Fulcio's DN, and checks that the bundle references a Rekor transparency log entry. Full Rekor inclusion-proof verification is planned for v1.1.
+2. **Attestation Validation**: ClearHash extracts the SLSA provenance statement, checks the leaf certificate issuer against Fulcio's DN, verifies the Cosign DSSE signature over the in-toto statement using the leaf certificate's public key, and checks that the bundle references a Rekor transparency log entry. Full Rekor inclusion-proof verification is planned for v1.1.
 3. **Container Sandbox Rebuild**: ClearHash clones the attested source repository on the host, checks out the exact commit, and confirms that `HEAD` matches it. It then mounts the tree into a fresh container from the ecosystem's pinned Docker image (`node:20-bookworm-slim` or equivalent) and runs the rebuild there.
 4. **Differential Tree Hash Comparison**: ClearHash unpacks both the rebuilt tarball and the registry tarball into temporary trees and hashes each file by its content and executable bit, ignoring timestamps.
 5. **Verdict Generation**: If the file trees match, ClearHash outputs a success verdict. If any injected files, content changes, mode flips, or missing files are detected, ClearHash returns a non-zero exit code and displays the exact diff breakdown.

@@ -186,6 +186,7 @@ behind the same adapter interface without engine changes.
 **v1 (today):**
 
 - Envelope structural integrity (SLSA v0.2 *and* v1 in-toto statements)
+- Full Cosign DSSE signature verification over the in-toto statement using the leaf cert's public key
 - X.509 leaf certificate extraction from the Sigstore bundle
 - Issuer = Fulcio (rejects bundles with non-Fulcio leaf certs)
 - Subject Alternative Name → GitHub Actions workflow URI
@@ -197,7 +198,6 @@ behind the same adapter interface without engine changes.
 
 **v1.1 (next):**
 
-- Full Cosign DSSE signature verification using the leaf cert's public key
 - Full Rekor Merkle inclusion-proof verification
 - Air-gapped rebuilds via pre-fetched offline dep caches
 - Wheel verification for PyPI (currently only sdists)

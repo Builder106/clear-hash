@@ -4,7 +4,7 @@ Concrete next steps, ordered by user-visible impact.
 
 ## v1.1 — full cryptographic verification
 
-- [ ] **Full Cosign DSSE signature verification.** Today, the leaf cert is extracted and its
+- [x] **Full Cosign DSSE signature verification.** Today, the leaf cert is extracted and its
 
   issuer is checked against Fulcio's DN; the DSSE signature itself is not verified against
   the leaf's public key. v1.1 pulls in the `sigstore` crate and verifies the signature

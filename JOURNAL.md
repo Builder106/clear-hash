@@ -4,6 +4,10 @@
 > things happen — retrospectives need this raw material to land.
 > Reverse-chronological; one paragraph max per entry.
 
+## 2026-11-06: Implement full Cosign DSSE signature verification #milestone #security
+
+Implemented cryptographic verification of Cosign DSSE signatures over in-toto statements using the `sigstore` crate and `aws-lc-rs`. When verifying SLSA provenance attestations, ClearHash extracts the DSSE envelope, calculates the canonical Pre-Authentication Encoding (`DSSEv1 <len(type)> <type> <len(payload)> <payload>`), parses the subject public key from the Fulcio-issued X.509 leaf certificate, and verifies the envelope signature against the leaf's public key (handling both ASN.1 DER and raw IEEE P1363 signatures). Tampered payloads, corrupted signatures, missing envelopes, and empty signatures are now strictly rejected before rebuild comparison.
+
 ## 2026-11-06: Make the social preview tags absolute #fix
 
 The page set `og:image` to `/assets/banner-dark.png`, a relative path that link preview crawlers don't resolve, and it had no `og:type`, `og:url` or `twitter:card`. `layout` now takes the page path and builds absolute URLs from one `SITE_URL` constant. It also emits the missing tags and points at a new 1200x630 card, `assets/og.png`, made from the README banner. The banner is 2.86:1, so it would have been cropped as is. A test pins the tags and the served image. Production deploys are manual, so the tags go live with the next one.
