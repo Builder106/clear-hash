@@ -10,7 +10,7 @@ Concrete next steps, ordered by user-visible impact.
   the leaf's public key. v1.1 pulls in the `sigstore` crate and verifies the signature
   over the in-toto statement.
 
-- [ ] **Full Rekor Merkle inclusion-proof verification.** Today, the Rekor log index is read
+- [x] **Full Rekor Merkle inclusion-proof verification.** Today, the Rekor log index is read
 
   out of `tlogEntries[0]` and required to be present. v1.1 walks the inclusion proof and
   confirms the entry is committed against a Rekor checkpoint.

@@ -4,12 +4,13 @@
 //!   1. The bundle envelope has a well-formed in-toto statement with a (repo, commit) claim.
 //!   2. The bundle carries a Fulcio-issued X.509 leaf certificate.
 //!   3. The leaf cert's SAN includes a GitHub Actions workflow URI consistent with the source repo.
-//!   4. A Rekor transparency-log entry is referenced.
+//!   4. The signed entry is included in Rekor against an authenticated checkpoint.
 //!   5. Full Cosign DSSE signature verification over the in-toto statement against the leaf cert's public key.
 //!
 //! What is deferred to future milestones:
-//!   - Full Rekor Merkle inclusion-proof verification.
 //!   - SCT (Signed Certificate Timestamp) verification.
+
+mod rekor;
 
 use clearhash_core::ProvenanceClaim;
 use clearhash_ecosystems::{AdapterError, EcosystemAdapter};
@@ -37,6 +38,8 @@ pub enum ProvenanceError {
     IdentityMismatch { san: String, repo: String },
     #[error("attestation bundle missing Rekor transparency-log entry")]
     MissingRekorEntry,
+    #[error("Rekor inclusion verification failed: {0}")]
+    RekorVerification(String),
     #[error("attestation bundle missing DSSE envelope")]
     MissingDsseEnvelope,
     #[error("DSSE envelope has no signatures")]
@@ -83,11 +86,14 @@ pub async fn verify(
     let (identity, cert_der) = extract_identity(&root, &claim)?;
 
     // Step C: full Cosign DSSE signature verification over the in-toto statement.
-    verify_dsse(&root, &cert_der)?;
+    let signature = verify_dsse(&root, &cert_der)?;
 
-    tracing::warn!(
-        "provenance: validated Cosign DSSE signature + cert-chain + identity. \
-         Full Rekor inclusion proof verification is next."
+    // Step D: authenticate the checkpoint, walk the Merkle proof, and bind the
+    // committed entry to the payload, certificate, and signature just verified.
+    rekor::verify(&root, &cert_der, &signature)?;
+
+    tracing::debug!(
+        "provenance: validated Cosign DSSE signature, certificate identity, and Rekor inclusion"
     );
 
     Ok(VerifyOk { claim, identity })
@@ -140,7 +146,7 @@ fn p1363_to_der(raw: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// Verify the DSSE signature inside the bundle over the in-toto statement against the leaf cert's public key.
-fn verify_dsse(root: &serde_json::Value, cert_der: &[u8]) -> Result<(), ProvenanceError> {
+fn verify_dsse(root: &serde_json::Value, cert_der: &[u8]) -> Result<Vec<u8>, ProvenanceError> {
     let dsse = find_dsse_envelope(root).ok_or(ProvenanceError::MissingDsseEnvelope)?;
 
     let payload_type = dsse
@@ -173,7 +179,6 @@ fn verify_dsse(root: &serde_json::Value, cert_der: &[u8]) -> Result<(), Provenan
 
     let pae = compute_dsse_pae(payload_type, &payload_bytes);
 
-    let mut verified = false;
     for sig_obj in signatures {
         let sig_b64 = match sig_obj.get("sig").and_then(|s| s.as_str()) {
             Some(s) => s,
@@ -188,8 +193,7 @@ fn verify_dsse(root: &serde_json::Value, cert_der: &[u8]) -> Result<(), Provenan
             .verify_signature(Signature::Raw(&sig_bytes), &pae)
             .is_ok()
         {
-            verified = true;
-            break;
+            return Ok(sig_bytes);
         }
 
         // If the signature was raw IEEE P1363 (64 bytes), try converting to ASN.1 DER.
@@ -199,18 +203,13 @@ fn verify_dsse(root: &serde_json::Value, cert_der: &[u8]) -> Result<(), Provenan
                     .verify_signature(Signature::Raw(&der_sig), &pae)
                     .is_ok()
                 {
-                    verified = true;
-                    break;
+                    return Ok(sig_bytes);
                 }
             }
         }
     }
 
-    if !verified {
-        return Err(ProvenanceError::SignatureVerificationFailed);
-    }
-
-    Ok(())
+    Err(ProvenanceError::SignatureVerificationFailed)
 }
 
 /// Find the bundle's `dsseEnvelope` regardless of envelope variant (direct or nested under `attestations`).

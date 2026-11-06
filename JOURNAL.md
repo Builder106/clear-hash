@@ -4,6 +4,10 @@
 > things happen — retrospectives need this raw material to land.
 > Reverse-chronological; one paragraph max per entry.
 
+## 2026-11-06: Authenticate Rekor Merkle inclusion proofs offline #decision #security
+
+Rekor verification now uses Sigstore's existing Merkle/checkpoint implementation and a pinned production Rekor v1 public key from Sigstore's trusted root, avoiding network trust bootstrapping during verification. The proof must match the checkpoint's signed root and tree size, and the committed entry must match the DSSE payload hash, the signature actually verified with the leaf key, and the exact leaf certificate. Both `intoto` v0.0.2 and `dsse` v0.0.1 entries are supported. Rekor v1's global index can differ from its shard-local proof index; the signed entry timestamp authenticates the global index in that case. Sigstore enables only `rustls-tls` and `rekor`, retaining the crypto API while removing unused OCI/OAuth dependencies and their RSA advisory. Unknown log keys and entry formats fail closed and require a reviewed update; automatic TUF key refresh and SCT verification remain outside this milestone.
+
 ## 2026-11-06: Implement full Cosign DSSE signature verification #milestone #security
 
 Implemented cryptographic verification of Cosign DSSE signatures over in-toto statements using the `sigstore` crate and `aws-lc-rs`. When verifying SLSA provenance attestations, ClearHash extracts the DSSE envelope, calculates the canonical Pre-Authentication Encoding (`DSSEv1 <len(type)> <type> <len(payload)> <payload>`), parses the subject public key from the Fulcio-issued X.509 leaf certificate, and verifies the envelope signature against the leaf's public key (handling both ASN.1 DER and raw IEEE P1363 signatures). Tampered payloads, corrupted signatures, missing envelopes, and empty signatures are now strictly rejected before rebuild comparison.

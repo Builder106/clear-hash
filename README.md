@@ -100,7 +100,7 @@ package.
 ## How it works
 
 1. Download the artifact and its SLSA attestation from npm, PyPI, or crates.io.
-2. Check that the attestation's certificate was issued by Fulcio, that it references a Rekor log entry, and that its workflow URI names the source repository.
+2. Check the certificate's Fulcio issuer identity, verify its DSSE signature, authenticate the Rekor checkpoint and Merkle inclusion proof, and confirm that the workflow URI names the source repository.
 3. Clone the source repository, check out the attested commit, and confirm that `HEAD` matches it.
 4. Rebuild the package in a pinned Docker image (`npm pack`, `python -m build --sdist`, or `cargo package`).
 5. Extract both archives, drop the metadata the registry adds, and compare their Merkle-hashed file trees. A match exits 0. A mismatch exits 1 with a per-file diff.
@@ -191,16 +191,21 @@ behind the same adapter interface without engine changes.
 - Issuer = Fulcio (rejects bundles with non-Fulcio leaf certs)
 - Subject Alternative Name → GitHub Actions workflow URI
 - **Cross-check**: workflow URI's `owner/repo` segment matches the attested source repo
-- Rekor transparency-log entry presence
+- Full Rekor v1 Merkle inclusion-proof verification against a signed checkpoint, with the logged payload, signature, and certificate bound to the attestation
 - Source repo `git clone`+ commit pinning with`HEAD == attested-commit` verification
 - Network-isolated rebuild container (default bridge; build needs network for `npm ci`)
 - File-tree Merkle compare with per-file diff output
 
 **v1.1 (next):**
 
-- Full Rekor Merkle inclusion-proof verification
+- SCT (Signed Certificate Timestamp) verification
 - Air-gapped rebuilds via pre-fetched offline dep caches
 - Wheel verification for PyPI (currently only sdists)
+
+Rekor verification runs offline using the pinned production `rekor.sigstore.dev`
+public key from Sigstore's trusted root. Missing proofs, invalid checkpoints, and
+unknown log keys or entry formats fail verification. Supported entry formats are
+`intoto` v0.0.2 and `dsse` v0.0.1; new log keys require a reviewed update.
 
 ---
 
