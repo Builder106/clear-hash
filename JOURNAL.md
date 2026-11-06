@@ -4,6 +4,10 @@
 > things happen — retrospectives need this raw material to land.
 > Reverse-chronological; one paragraph max per entry.
 
+## 2026-11-06: Ignore unpatched Marvin timing advisory in cargo-deny and cargo-audit #ci #security
+
+Cargo security audit failed on RUSTSEC-2023-0071 (timing sidechannel in rsa 0.9.10 pulled in transitively by the sigstore crate), for which no upstream patch exists. Added explicit advisory ignores to `deny.toml` and `.cargo/audit.toml`, and bumped the macOS CI runner matrix target from retired `macos-14` to `macos-15`.
+
 ## 2026-11-06: Authenticate Rekor Merkle inclusion proofs offline #decision #security
 
 Rekor verification now uses Sigstore's existing Merkle/checkpoint implementation and a pinned production Rekor v1 public key from Sigstore's trusted root, avoiding network trust bootstrapping during verification. The proof must match the checkpoint's signed root and tree size, and the committed entry must match the DSSE payload hash, the signature actually verified with the leaf key, and the exact leaf certificate. Both `intoto` v0.0.2 and `dsse` v0.0.1 entries are supported. Rekor v1's global index can differ from its shard-local proof index; the signed entry timestamp authenticates the global index in that case. Sigstore enables only `rustls-tls` and `rekor`, retaining the crypto API while removing unused OCI/OAuth dependencies and their RSA advisory. Unknown log keys and entry formats fail closed and require a reviewed update; automatic TUF key refresh and SCT verification remain outside this milestone.
