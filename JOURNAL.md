@@ -4,6 +4,10 @@
 > things happen — retrospectives need this raw material to land.
 > Reverse-chronological; one paragraph max per entry.
 
+## 2026-11-06: Make the social preview tags absolute #fix
+
+The page set `og:image` to `/assets/banner-dark.png`, a relative path that link preview crawlers don't resolve, and it had no `og:type`, `og:url` or `twitter:card`. `layout` now takes the page path and builds absolute URLs from one `SITE_URL` constant. It also emits the missing tags and points at a new 1200x630 card, `assets/og.png`, made from the README banner. The banner is 2.86:1, so it would have been cropped as is. A test pins the tags and the served image. Production deploys are manual, so the tags go live with the next one.
+
 ## 2026-10-27: Scope package publishing permission #ci #security
 
 The workflow defaults to read-only repository access, and its container publish job holds package write permission.
