@@ -593,7 +593,11 @@ const ASCII_BANNER: &str = r#"   ██████╗██╗     ████
   ╚██████╗███████╗███████╗██║  ██║██║  ██║██║  ██║██║  ██║███████║██║  ██║
    ╚═════╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝"#;
 
-fn layout(title: &str, body: Markup) -> Markup {
+const SITE_URL: &str = "https://clearhash.vercel.app";
+
+fn layout(path: &str, title: &str, body: Markup) -> Markup {
+    let url = format!("{SITE_URL}{path}");
+    let card = format!("{SITE_URL}/assets/og.png");
     html! {
         (DOCTYPE)
         html lang="en" {
@@ -602,9 +606,17 @@ fn layout(title: &str, body: Markup) -> Markup {
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { (title) }
                 meta name="description" content="ClearHash — rebuild every package, compare every byte, block every tamper. A supply-chain integrity verifier.";
+                meta property="og:type" content="website";
+                meta property="og:site_name" content="ClearHash";
                 meta property="og:title" content=(title);
                 meta property="og:description" content="Rebuild every package. Compare every byte. Block every tamper.";
-                meta property="og:image" content="/assets/banner-dark.png";
+                meta property="og:url" content=(url);
+                meta property="og:image" content=(card);
+                meta property="og:image:width" content="1200";
+                meta property="og:image:height" content="630";
+                meta property="og:image:alt" content="ClearHash shield mark beside the line: Rebuild every package. Compare every byte. Block every tamper.";
+                meta name="twitter:card" content="summary_large_image";
+                meta name="twitter:image" content=(card);
                 meta name="theme-color" content="#0a0e0a";
                 link rel="icon" type="image/svg+xml" href="/assets/favicon.svg";
                 link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png";
@@ -692,6 +704,7 @@ fn info_header() -> Markup {
 
 pub async fn landing() -> Markup {
     layout(
+        "/",
         "ClearHash — supply-chain integrity verifier",
         html! {
             div.wrap {
@@ -863,6 +876,7 @@ pub async fn landing() -> Markup {
 
 pub fn inspect_empty() -> Markup {
     layout(
+        "/inspect",
         "ClearHash · inspect",
         html! {
             div.wrap {
@@ -912,6 +926,7 @@ pub fn inspect_result(package: &str, result: &InspectResult) -> Markup {
     };
 
     layout(
+        "/inspect",
         &format!("ClearHash · {}", result.package),
         html! {
             div.wrap {
@@ -970,6 +985,7 @@ pub fn inspect_result(package: &str, result: &InspectResult) -> Markup {
 
 pub fn inspect_error(package: &str, err: &InspectError) -> Markup {
     layout(
+        "/inspect",
         "ClearHash · error",
         html! {
             div.wrap {

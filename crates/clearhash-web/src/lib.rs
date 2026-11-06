@@ -113,6 +113,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn landing_page_carries_absolute_social_preview_tags() {
+        let landing = response("/").await;
+        let body = axum::body::to_bytes(landing.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let html = String::from_utf8(body.to_vec()).unwrap();
+        for tag in [
+            r#"property="og:type" content="website""#,
+            r#"property="og:url" content="https://clearhash.vercel.app/""#,
+            r#"property="og:image" content="https://clearhash.vercel.app/assets/og.png""#,
+            r#"name="twitter:card" content="summary_large_image""#,
+            r#"name="twitter:image" content="https://clearhash.vercel.app/assets/og.png""#,
+        ] {
+            assert!(html.contains(tag), "missing {tag}");
+        }
+        assert_eq!(response("/assets/og.png").await.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
     async fn existing_pages_and_api_routes_are_reachable() {
         assert_eq!(response("/").await.status(), StatusCode::OK);
         assert_eq!(response("/inspect").await.status(), StatusCode::OK);
