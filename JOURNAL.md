@@ -4,6 +4,10 @@
 > things happen — retrospectives need this raw material to land.
 > Reverse-chronological; one paragraph max per entry.
 
+## 2026-11-07: Verify Signed Certificate Timestamps (SCTs) offline #milestone #security
+
+SCT verification now validates that the Fulcio leaf certificate was submitted to and logged by a Certificate Transparency log prior to issuance, preventing attacks where an adversary creates a forged certificate with `O=sigstore.dev`. The verification extracts the embedded SCT list extension (`1.3.6.1.4.1.11129.2.4.2`), reconstructs the precertificate TBSCertificate DER by stripping the SCT extension according to RFC 6962, serializes the RFC 6962 `DigitallySigned` PrecertEntry payload, and cryptographically verifies the CT log signature using pinned public keys for Sigstore's active and historical production CT logs (`ctfe.sigstore.dev/2022` and `ctfe.sigstore.dev/test`). The signed entry binds the precertificate to pinned Fulcio CA SubjectPublicKeyInfo hashes, rejecting certificates lacking SCTs, carrying untrusted log IDs, bearing tampered TBS payloads or signatures, or issued by unpinned CAs.
+
 ## 2026-11-06: Ignore unpatched Marvin timing advisory in cargo-deny and cargo-audit #ci #security
 
 Cargo security audit failed on RUSTSEC-2023-0071 (timing sidechannel in rsa 0.9.10 pulled in transitively by the sigstore crate), for which no upstream patch exists. Added explicit advisory ignores to `deny.toml` and `.cargo/audit.toml`, and bumped the macOS CI runner matrix target from retired `macos-14` to `macos-15`.

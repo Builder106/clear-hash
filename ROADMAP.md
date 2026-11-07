@@ -15,7 +15,7 @@ Concrete next steps, ordered by user-visible impact.
   out of `tlogEntries[0]` and required to be present. v1.1 walks the inclusion proof and
   confirms the entry is committed against a Rekor checkpoint.
 
-- [ ] **SCT (Signed Certificate Timestamp) check.** Confirms Fulcio actually issued the cert
+- [x] **SCT (Signed Certificate Timestamp) check.** Confirms Fulcio actually issued the cert
 
   (rather than someone presenting a forged cert with `O=sigstore.dev`).
 

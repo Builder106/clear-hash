@@ -690,6 +690,8 @@ dependencies = [
  "chrono",
  "clearhash-core",
  "clearhash-ecosystems",
+ "const-oid",
+ "der",
  "hex",
  "serde_json",
  "serde_json_canonicalizer",
@@ -699,6 +701,7 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+ "x509-cert",
  "x509-parser",
 ]
 

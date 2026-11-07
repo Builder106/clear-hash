@@ -6,11 +6,10 @@
 //!   3. The leaf cert's SAN includes a GitHub Actions workflow URI consistent with the source repo.
 //!   4. The signed entry is included in Rekor against an authenticated checkpoint.
 //!   5. Full Cosign DSSE signature verification over the in-toto statement against the leaf cert's public key.
-//!
-//! What is deferred to future milestones:
-//!   - SCT (Signed Certificate Timestamp) verification.
+//!   6. SCT (Signed Certificate Timestamp) verification confirming Fulcio actually issued the certificate.
 
 mod rekor;
+mod sct;
 
 use clearhash_core::ProvenanceClaim;
 use clearhash_ecosystems::{AdapterError, EcosystemAdapter};
@@ -40,6 +39,8 @@ pub enum ProvenanceError {
     MissingRekorEntry,
     #[error("Rekor inclusion verification failed: {0}")]
     RekorVerification(String),
+    #[error("SCT verification failed: {0}")]
+    SctVerification(String),
     #[error("attestation bundle missing DSSE envelope")]
     MissingDsseEnvelope,
     #[error("DSSE envelope has no signatures")]
@@ -88,12 +89,15 @@ pub async fn verify(
     // Step C: full Cosign DSSE signature verification over the in-toto statement.
     let signature = verify_dsse(&root, &cert_der)?;
 
-    // Step D: authenticate the checkpoint, walk the Merkle proof, and bind the
+    // Step D: verify Signed Certificate Timestamp (SCT) to confirm Fulcio issued the certificate.
+    sct::verify(&root, &cert_der)?;
+
+    // Step E: authenticate the checkpoint, walk the Merkle proof, and bind the
     // committed entry to the payload, certificate, and signature just verified.
     rekor::verify(&root, &cert_der, &signature)?;
 
     tracing::debug!(
-        "provenance: validated Cosign DSSE signature, certificate identity, and Rekor inclusion"
+        "provenance: validated Cosign DSSE signature, certificate identity, Fulcio SCT, and Rekor inclusion"
     );
 
     Ok(VerifyOk { claim, identity })
@@ -396,6 +400,7 @@ fn base64_decode(s: &str) -> Result<Vec<u8>, String> {
 mod tests {
     use super::*;
     use clearhash_ecosystems::npm::NpmAdapter;
+    use der::{Decode, Encode};
 
     const FIXTURE_SIGSTORE: &str =
         include_str!("../tests/fixtures/npm_sigstore_2.3.1_attestation.json");
@@ -662,5 +667,39 @@ mod tests {
             .block_on(verify(&Stub, &serde_json::to_vec(&bundle).unwrap()))
             .unwrap_err();
         assert!(matches!(err, ProvenanceError::MissingCertChain));
+    }
+
+    #[tokio::test]
+    async fn rejects_cert_without_sct_end_to_end() {
+        let mut bundle: serde_json::Value = serde_json::from_str(FIXTURE_SIGSTORE).unwrap();
+        let cert_b64 = bundle
+            .pointer("/attestations/1/bundle/verificationMaterial/x509CertificateChain/certificates/0/rawBytes")
+            .unwrap()
+            .as_str()
+            .unwrap();
+        let cert_der = base64_decode(cert_b64).unwrap();
+
+        // Strip the SCT extension using precert_tbs_der and wrap into a fake cert
+        let stripped_tbs = sct::precert_tbs_der_for_test(&cert_der).unwrap();
+        let cert_fields = Vec::<der::Any>::from_der(&cert_der).unwrap();
+        let fake_cert = vec![
+            der::Any::from_der(&stripped_tbs).unwrap(),
+            cert_fields[1].clone(),
+            cert_fields[2].clone(),
+        ]
+        .to_der()
+        .unwrap();
+
+        *bundle
+            .pointer_mut("/attestations/1/bundle/verificationMaterial/x509CertificateChain/certificates/0/rawBytes")
+            .unwrap() = serde_json::Value::String(base64_encode(&fake_cert));
+
+        let err = verify(&NpmAdapter, &serde_json::to_vec(&bundle).unwrap())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, ProvenanceError::SctVerification(ref msg) if msg.contains("missing SCT extension")),
+            "expected SCT verification error, got: {err}"
+        );
     }
 }

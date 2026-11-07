@@ -191,6 +191,7 @@ behind the same adapter interface without engine changes.
 - Issuer = Fulcio (rejects bundles with non-Fulcio leaf certs)
 - Subject Alternative Name → GitHub Actions workflow URI
 - **Cross-check**: workflow URI's `owner/repo` segment matches the attested source repo
+- SCT (Signed Certificate Timestamp) verification confirming Fulcio precertificate submission to Certificate Transparency logs
 - Full Rekor v1 Merkle inclusion-proof verification against a signed checkpoint, with the logged payload, signature, and certificate bound to the attestation
 - Source repo `git clone`+ commit pinning with`HEAD == attested-commit` verification
 - Network-isolated rebuild container (default bridge; build needs network for `npm ci`)
@@ -198,12 +199,12 @@ behind the same adapter interface without engine changes.
 
 **v1.1 (next):**
 
-- SCT (Signed Certificate Timestamp) verification
 - Air-gapped rebuilds via pre-fetched offline dep caches
 - Wheel verification for PyPI (currently only sdists)
 
-Rekor verification runs offline using the pinned production `rekor.sigstore.dev`
-public key from Sigstore's trusted root. Missing proofs, invalid checkpoints, and
+Rekor and SCT verification run offline using pinned production public keys from
+Sigstore's trusted root (`rekor.sigstore.dev`, `ctfe.sigstore.dev/2022`, and Fulcio
+intermediate CA SPKI hashes). Missing proofs, invalid SCTs, invalid checkpoints, and
 unknown log keys or entry formats fail verification. Supported entry formats are
 `intoto` v0.0.2 and `dsse` v0.0.1; new log keys require a reviewed update.
 
