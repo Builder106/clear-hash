@@ -4,6 +4,10 @@
 > things happen — retrospectives need this raw material to land.
 > Reverse-chronological; one paragraph max per entry.
 
+## 2026-11-08: PyPI end-to-end verification via PEP 740 and lazy sdist resolution #milestone #ecosystem
+
+Implemented end-to-end reproducible verification for PyPI packages. Because PyPI artifact paths on `files.pythonhosted.org` are keyed by cryptographic hashes rather than static URLs, `EcosystemAdapter` and `clearhash-registry` now support two-phase resolution through `pypi.org/pypi/<pkg>/<ver>/json`, extracting source distribution tarballs and mapping to PEP 740 provenance endpoints (`pypi.org/integrity/<pkg>/<ver>/<filename>/provenance`). PEP 740 digital attestation envelopes (`attestation_bundles` containing DSSE statements, signatures, transparency entries, and Fulcio certificates) are cryptographically validated against Rekor, SCT, and leaf certificate extension claims (`1.3.6.1.4.1.57264.1.3`/`10`/`13`). Independent container rebuilds via `python -m build --sdist` in `python:3.12-slim-bookworm` verify bit-for-bit or metadata-normalized equivalence against PyPI distributions, completing the v1.2 PyPI milestone.
+
 ## 2026-11-07: Verify Signed Certificate Timestamps (SCTs) offline #milestone #security
 
 SCT verification now validates that the Fulcio leaf certificate was submitted to and logged by a Certificate Transparency log prior to issuance, preventing attacks where an adversary creates a forged certificate with `O=sigstore.dev`. The verification extracts the embedded SCT list extension (`1.3.6.1.4.1.11129.2.4.2`), reconstructs the precertificate TBSCertificate DER by stripping the SCT extension according to RFC 6962, serializes the RFC 6962 `DigitallySigned` PrecertEntry payload, and cryptographically verifies the CT log signature using pinned public keys for Sigstore's active and historical production CT logs (`ctfe.sigstore.dev/2022` and `ctfe.sigstore.dev/test`). The signed entry binds the precertificate to pinned Fulcio CA SubjectPublicKeyInfo hashes, rejecting certificates lacking SCTs, carrying untrusted log IDs, bearing tampered TBS payloads or signatures, or issued by unpinned CAs.

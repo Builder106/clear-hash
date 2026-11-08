@@ -21,7 +21,7 @@ Concrete next steps, ordered by user-visible impact.
 
 ## v1.2 — broader ecosystem coverage
 
-- [ ] **PyPI end-to-end.** Scaffold is in place; needs (a) sdist URL resolution from
+- [x] **PyPI end-to-end.** Scaffold is in place; needs (a) sdist URL resolution from
 
   `pypi.org/pypi/<pkg>/<ver>/json`, (b) PEP 740 envelope parsing, (c) `python -m build`
   rebuild flow validation. Estimated: ~1 day.
