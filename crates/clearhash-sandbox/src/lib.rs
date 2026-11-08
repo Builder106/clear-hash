@@ -71,7 +71,19 @@ pub fn extract_archive(
         .map_err(|e| SandboxError::Extract(e.to_string()))?;
 
     let final_root = match adapter.strip_archive_prefix(pkg) {
-        Some(prefix) => extract_into.join(prefix),
+        Some(prefix) => {
+            let primary = extract_into.join(&prefix);
+            if primary.exists() {
+                primary
+            } else {
+                let alt = extract_into.join(prefix.replace('-', "_"));
+                if alt.exists() {
+                    alt
+                } else {
+                    primary
+                }
+            }
+        }
         None => extract_into,
     };
     if !final_root.exists() {

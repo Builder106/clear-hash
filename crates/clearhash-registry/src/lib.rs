@@ -49,7 +49,20 @@ pub async fn fetch(
         .timeout(Duration::from_secs(60))
         .build()?;
 
-    let artifact_url = adapter.artifact_url(pkg);
+    let (artifact_url, attestation_url) = match adapter.release_metadata_url(pkg) {
+        Some(meta_url) => {
+            tracing::info!(url = %meta_url, "resolving release metadata");
+            let resp = client.get(meta_url.clone()).send().await?;
+            if !resp.status().is_success() {
+                return Err(FetchError::BadStatus(resp.status(), meta_url.into()));
+            }
+            let body = resp.bytes().await?;
+            let release = adapter.parse_release_urls(&body, pkg)?;
+            (release.artifact_url, release.attestation_url)
+        }
+        None => (adapter.artifact_url(pkg), adapter.attestation_url(pkg)),
+    };
+
     tracing::info!(url = %artifact_url, "fetching artifact");
 
     let resp = client.get(artifact_url.clone()).send().await?;
@@ -69,7 +82,7 @@ pub async fn fetch(
     tokio::fs::write(&archive_path, &bytes).await?;
 
     // Attestation bundle. None is a normal outcome (legacy packages / cargo).
-    let attestation_bundle = match adapter.attestation_url(pkg) {
+    let attestation_bundle = match attestation_url {
         None => None,
         Some(url) => {
             tracing::info!(url = %url, "fetching attestation");
@@ -344,5 +357,90 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, FetchError::BadStatus(s, _) if s.as_u16() == 500));
+    }
+
+    struct FakeMetadataAdapter {
+        base: String,
+    }
+
+    impl EcosystemAdapter for FakeMetadataAdapter {
+        fn ecosystem(&self) -> Ecosystem {
+            Ecosystem::Pypi
+        }
+        fn artifact_url(&self, _pkg: &PackageRef) -> Url {
+            panic!("should not be called when release_metadata_url is present")
+        }
+        fn attestation_url(&self, _pkg: &PackageRef) -> Option<Url> {
+            panic!("should not be called when release_metadata_url is present")
+        }
+        fn release_metadata_url(&self, _pkg: &PackageRef) -> Option<Url> {
+            Some(Url::parse(&format!("{}/release.json", self.base)).unwrap())
+        }
+        fn parse_release_urls(
+            &self,
+            _body: &[u8],
+            _pkg: &PackageRef,
+        ) -> Result<clearhash_ecosystems::ReleaseUrls, AdapterError> {
+            Ok(clearhash_ecosystems::ReleaseUrls {
+                artifact_url: Url::parse(&format!("{}/resolved_sdist.tar.gz", self.base)).unwrap(),
+                attestation_url: Some(
+                    Url::parse(&format!("{}/resolved_provenance", self.base)).unwrap(),
+                ),
+            })
+        }
+        fn parse_attestation(&self, _bundle: &[u8]) -> Result<ProvenanceClaim, AdapterError> {
+            unimplemented!()
+        }
+        fn rebuild_image(&self) -> &'static str {
+            unimplemented!()
+        }
+        fn rebuild_script(&self) -> &'static str {
+            unimplemented!()
+        }
+        fn built_artifact_dir(&self) -> &'static str {
+            unimplemented!()
+        }
+        fn strip_archive_prefix(&self, _pkg: &PackageRef) -> Option<String> {
+            None
+        }
+        fn ignore_paths(&self) -> &'static [&'static str] {
+            &[]
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_uses_release_metadata_url_when_available() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/release.json"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"metadata".to_vec()))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/resolved_sdist.tar.gz"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"sdist-bytes".to_vec()))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/resolved_provenance"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"provenance-bytes".to_vec()))
+            .mount(&server)
+            .await;
+
+        let adapter = FakeMetadataAdapter { base: server.uri() };
+        let p = PackageRef {
+            ecosystem: Ecosystem::Pypi,
+            name: "sampleproject".into(),
+            version: "4.0.0".into(),
+        };
+        let result = fetch(&adapter, &p).await.expect("fetch should succeed");
+
+        let on_disk = tokio::fs::read(&result.archive_path).await.unwrap();
+        assert_eq!(on_disk, b"sdist-bytes");
+        assert_eq!(result.registry_sha256, sha256(b"sdist-bytes"));
+        assert_eq!(
+            result.attestation_bundle.as_deref(),
+            Some(&b"provenance-bytes"[..])
+        );
     }
 }

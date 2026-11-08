@@ -668,6 +668,7 @@ name = "clearhash-ecosystems"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "chrono",
  "clearhash-core",
  "flate2",
@@ -679,6 +680,7 @@ dependencies = [
  "thiserror",
  "url",
  "walkdir",
+ "x509-parser",
 ]
 
 [[package]]

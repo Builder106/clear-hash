@@ -156,19 +156,26 @@ fn verify_dsse(root: &serde_json::Value, cert_der: &[u8]) -> Result<Vec<u8>, Pro
     let payload_type = dsse
         .get("payloadType")
         .and_then(|v| v.as_str())
-        .ok_or(ProvenanceError::MissingDsseEnvelope)?;
+        .unwrap_or("application/vnd.in-toto+json");
 
     let payload_b64 = dsse
         .get("payload")
+        .or_else(|| dsse.get("statement"))
         .and_then(|v| v.as_str())
         .ok_or(ProvenanceError::MissingDsseEnvelope)?;
 
     let payload_bytes = base64_decode(payload_b64).map_err(ProvenanceError::BadDssePayload)?;
 
-    let signatures = dsse
-        .get("signatures")
-        .and_then(|v| v.as_array())
-        .ok_or(ProvenanceError::MissingDsseSignature)?;
+    let single_sig;
+    let signatures: &[serde_json::Value] =
+        if let Some(arr) = dsse.get("signatures").and_then(|v| v.as_array()) {
+            arr.as_slice()
+        } else if let Some(sig) = dsse.get("signature") {
+            single_sig = [serde_json::json!({ "sig": sig })];
+            &single_sig
+        } else {
+            return Err(ProvenanceError::MissingDsseSignature);
+        };
 
     if signatures.is_empty() {
         return Err(ProvenanceError::MissingDsseSignature);
@@ -216,7 +223,7 @@ fn verify_dsse(root: &serde_json::Value, cert_der: &[u8]) -> Result<Vec<u8>, Pro
     Err(ProvenanceError::SignatureVerificationFailed)
 }
 
-/// Find the bundle's `dsseEnvelope` regardless of envelope variant (direct or nested under `attestations`).
+/// Find the bundle's `dsseEnvelope` regardless of envelope variant (direct, npm, or PEP 740).
 fn find_dsse_envelope(root: &serde_json::Value) -> Option<&serde_json::Value> {
     if let Some(dsse) = root.get("dsseEnvelope") {
         return Some(dsse);
@@ -239,6 +246,23 @@ fn find_dsse_envelope(root: &serde_json::Value) -> Option<&serde_json::Value> {
             }
         }
     }
+    if let Some(bundles) = root.get("attestation_bundles").and_then(|b| b.as_array()) {
+        for b in bundles {
+            if let Some(arr) = b.get("attestations").and_then(|a| a.as_array()) {
+                for att in arr {
+                    if let Some(env) = att.get("envelope") {
+                        return Some(env);
+                    }
+                    if let Some(dsse) = att.pointer("/bundle/dsseEnvelope") {
+                        return Some(dsse);
+                    }
+                    if let Some(dsse) = att.get("dsseEnvelope") {
+                        return Some(dsse);
+                    }
+                }
+            }
+        }
+    }
     root.pointer("/bundle/dsseEnvelope")
 }
 
@@ -255,6 +279,7 @@ fn extract_identity(
     let cert_b64 = vm
         .pointer("/x509CertificateChain/certificates/0/rawBytes")
         .or_else(|| vm.pointer("/certificate/rawBytes"))
+        .or_else(|| vm.get("certificate"))
         .and_then(|v| v.as_str())
         .ok_or(ProvenanceError::MissingCertChain)?;
 
@@ -302,11 +327,14 @@ fn extract_identity(
     }
 
     // ---- Rekor log entry ----
-    let rekor_log_index = vm.pointer("/tlogEntries/0/logIndex").and_then(|v| {
-        v.as_str()
-            .and_then(|s| s.parse::<u64>().ok())
-            .or_else(|| v.as_u64())
-    });
+    let rekor_log_index = vm
+        .pointer("/tlogEntries/0/logIndex")
+        .or_else(|| vm.pointer("/transparency_entries/0/logIndex"))
+        .and_then(|v| {
+            v.as_str()
+                .and_then(|s| s.parse::<u64>().ok())
+                .or_else(|| v.as_u64())
+        });
     if rekor_log_index.is_none() {
         return Err(ProvenanceError::MissingRekorEntry);
     }
@@ -341,6 +369,21 @@ fn find_verification_material(root: &serde_json::Value) -> Option<&serde_json::V
             }
             if let Some(vm) = att.pointer("/bundle/verificationMaterial") {
                 return Some(vm);
+            }
+        }
+    }
+    // PEP 740 shape: { "attestation_bundles": [ { "attestations": [ { "verification_material": ... } ] } ] }
+    if let Some(bundles) = root.get("attestation_bundles").and_then(|b| b.as_array()) {
+        for b in bundles {
+            if let Some(arr) = b.get("attestations").and_then(|a| a.as_array()) {
+                for att in arr {
+                    if let Some(vm) = att
+                        .get("verification_material")
+                        .or_else(|| att.pointer("/bundle/verificationMaterial"))
+                    {
+                        return Some(vm);
+                    }
+                }
             }
         }
     }
@@ -404,6 +447,8 @@ mod tests {
 
     const FIXTURE_SIGSTORE: &str =
         include_str!("../tests/fixtures/npm_sigstore_2.3.1_attestation.json");
+    const FIXTURE_PYPI_SAMPLEPROJECT: &str =
+        include_str!("../tests/fixtures/pypi_sampleproject_4.0.0_attestation.json");
 
     #[test]
     fn pae_spec_test_vector() {
@@ -701,5 +746,29 @@ mod tests {
             matches!(err, ProvenanceError::SctVerification(ref msg) if msg.contains("missing SCT extension")),
             "expected SCT verification error, got: {err}"
         );
+    }
+
+    #[tokio::test]
+    async fn verifies_real_pep740_dsse_signature_sct_and_rekor() {
+        use clearhash_ecosystems::pypi::PypiAdapter;
+
+        let ok = verify(&PypiAdapter, FIXTURE_PYPI_SAMPLEPROJECT.as_bytes())
+            .await
+            .expect("PEP 740 verification should succeed end-to-end");
+
+        assert_eq!(
+            ok.claim.source_repo,
+            "https://github.com/pypa/sampleproject"
+        );
+        assert_eq!(
+            ok.claim.commit_sha,
+            "621e4974ca25ce531773def586ba3ed8e736b3fc"
+        );
+        assert_eq!(ok.identity.rekor_log_index, Some(147137139));
+        assert!(ok
+            .identity
+            .workflow_uri
+            .unwrap()
+            .contains("pypa/sampleproject/.github/workflows/release.yml"));
     }
 }

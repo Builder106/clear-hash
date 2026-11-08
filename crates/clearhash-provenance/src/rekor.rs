@@ -56,7 +56,10 @@ pub(super) fn verify(
     verified_signature: &[u8],
 ) -> Result<(), ProvenanceError> {
     let entry = find_verification_material(root)
-        .and_then(|vm| vm.pointer("/tlogEntries/0"))
+        .and_then(|vm| {
+            vm.pointer("/tlogEntries/0")
+                .or_else(|| vm.pointer("/transparency_entries/0"))
+        })
         .ok_or(ProvenanceError::MissingRekorEntry)?;
     let body = decode(entry, "/canonicalizedBody")?;
     let key_der = STANDARD.decode(REKOR_KEY).map_err(invalid)?;
@@ -125,7 +128,11 @@ fn verify_body(
     verified_signature: &[u8],
 ) -> Result<(), ProvenanceError> {
     let dsse = find_dsse_envelope(root).ok_or(ProvenanceError::MissingDsseEnvelope)?;
-    let payload = decode(dsse, "/payload")?;
+    let payload = if dsse.pointer("/payload").is_some() {
+        decode(dsse, "/payload")?
+    } else {
+        decode(dsse, "/statement")?
+    };
     let (content, signatures, signature_field, cert_field, double_encoded) =
         match (text(logged, "/kind")?, text(logged, "/apiVersion")?) {
             ("intoto", "0.0.2") => {

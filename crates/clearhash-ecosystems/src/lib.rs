@@ -32,6 +32,24 @@ pub trait EcosystemAdapter: Send + Sync {
     /// adapter's way of telling the CLI "this ecosystem requires --allow-unattested."
     fn attestation_url(&self, pkg: &PackageRef) -> Option<Url>;
 
+    /// Optional: release metadata URL for ecosystems whose artifact/attestation URLs cannot
+    /// be statically constructed from the package coordinates (e.g. PyPI sdists and PEP 740
+    /// integrity endpoints).
+    fn release_metadata_url(&self, pkg: &PackageRef) -> Option<Url> {
+        let _ = pkg;
+        None
+    }
+
+    /// Parse the release URLs out of the response body from `release_metadata_url`.
+    fn parse_release_urls(
+        &self,
+        body: &[u8],
+        pkg: &PackageRef,
+    ) -> Result<ReleaseUrls, AdapterError> {
+        let _ = (body, pkg);
+        Err(AdapterError::Unimplemented("parse_release_urls"))
+    }
+
     // --- Optional: latest-version resolution -------------------------------------------
 
     /// URL whose response body, when fed to `parse_latest_version`, yields the latest stable
@@ -139,11 +157,24 @@ pub trait EcosystemAdapter: Send + Sync {
     }
 }
 
-/// Crude glob: supports a trailing `*` (prefix match) or exact match. Sufficient for the
+/// Resolved release URLs for an ecosystem artifact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReleaseUrls {
+    pub artifact_url: Url,
+    pub attestation_url: Option<Url>,
+}
+
+/// Crude glob: supports wildcards `*` at prefix, suffix, or both (contains). Sufficient for the
 /// short, hand-curated ignore lists each adapter ships. Avoids pulling in the full
 /// `globset` crate for ~10 patterns.
 fn path_matches(pattern: &str, path: &str) -> bool {
-    if let Some(prefix) = pattern.strip_suffix('*') {
+    if let Some(rest) = pattern.strip_prefix('*') {
+        if let Some(mid) = rest.strip_suffix('*') {
+            path.contains(mid)
+        } else {
+            path.ends_with(rest)
+        }
+    } else if let Some(prefix) = pattern.strip_suffix('*') {
         path.starts_with(prefix)
     } else {
         pattern == path
@@ -186,5 +217,11 @@ mod tests {
         assert!(!path_matches("node_modules/*", "src/foo.js"));
         assert!(path_matches("package.json", "package.json"));
         assert!(!path_matches("package.json", "package.json.lock"));
+        assert!(path_matches("*.egg-info/*", "foo.egg-info/PKG-INFO"));
+        assert!(path_matches(
+            "*.egg-info/*",
+            "src/sampleproject.egg-info/PKG-INFO"
+        ));
+        assert!(!path_matches("*.egg-info/*", "src/sampleproject/foo.py"));
     }
 }
