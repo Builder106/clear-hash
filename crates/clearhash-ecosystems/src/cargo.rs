@@ -1,7 +1,7 @@
 //! Cargo ecosystem adapter.
 //!
 //! Cargo has no widespread SLSA attestation as of 2026. `attestation_url` returns `None`;
-//! every cargo verify requires `--allow-unattested` at the CLI layer.
+//! every Cargo verify requires `--allow-unattested --source <git-url> --commit <sha>`.
 
 use async_trait::async_trait;
 use clearhash_core::{Ecosystem, PackageRef, ProvenanceClaim};
@@ -56,15 +56,15 @@ impl EcosystemAdapter for CargoAdapter {
     }
 
     fn rebuild_image(&self) -> &'static str {
-        "rust:1.78-slim-bookworm"
+        "rust:1.88.0-slim-bookworm"
     }
 
     fn rebuild_script(&self) -> &'static str {
         r#"set -eu
 mkdir -p /out
 cd /src
-cargo package --locked --no-verify --target-dir=/tmp/cargo-build
-cp target/package/*.crate /out/ 2>/dev/null || cp /tmp/cargo-build/package/*.crate /out/
+cargo package --locked --no-verify --package "$PKG_NAME@$PKG_VERSION" --target-dir=/tmp/cargo-build
+cp "/tmp/cargo-build/package/$PKG_NAME-$PKG_VERSION.crate" /out/
 "#
     }
 

@@ -26,7 +26,7 @@ Concrete next steps, ordered by user-visible impact.
   `pypi.org/pypi/<pkg>/<ver>/json`, (b) PEP 740 envelope parsing, (c) `python -m build`
   rebuild flow validation. Estimated: ~1 day.
 
-- [ ] **Cargo end-to-end with manual source pinning.** Cargo crates have no SLSA attestation;
+- [x] **Cargo end-to-end with manual source pinning.** Cargo crates have no SLSA attestation;
 
   add `--source <git-url> --commit <sha>` flags so users can verify a crate against a
   manually-pinned source tree. The rebuild + compare pipeline already exists.

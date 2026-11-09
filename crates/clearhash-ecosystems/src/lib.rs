@@ -82,7 +82,8 @@ pub trait EcosystemAdapter: Send + Sync {
     fn rebuild_image(&self) -> &'static str;
 
     /// Build script injected into the network-isolated container. The sandbox crate
-    /// substitutes `{COMMIT_SHA}` and `{REPO_URL}` placeholders before exec.
+    /// substitutes `{COMMIT_SHA}` and `{REPO_URL}` placeholders before exec, and exposes
+    /// `PKG_NAME` and `PKG_VERSION` as environment variables for package selection.
     fn rebuild_script(&self) -> &'static str;
 
     /// Absolute path inside the container from which built artifacts should be pulled.

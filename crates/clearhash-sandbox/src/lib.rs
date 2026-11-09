@@ -1,8 +1,8 @@
 //! Docker rebuild orchestration + file-tree comparison.
 //!
 //! The rebuild pipeline:
-//!   1. On the host: `git clone --depth=1` the attested source repo, then `git fetch origin
-//!      <commit>` and `git checkout <commit>`. Verify `HEAD` matches the attested SHA — defends
+//!   1. On the host: `git clone --no-checkout` the selected source repo, then `git fetch origin
+//!      <commit>` and `git checkout --detach <commit>`. Verify `HEAD` matches the pinned SHA — defends
 //!      against a tampered git server returning a different tree for the requested ref.
 //!   2. Pull the adapter's pinned Docker image (cache hit common).
 //!   3. Create a fresh container with the source tree bind-mounted at `/src`. Run the adapter's
@@ -47,7 +47,7 @@ pub enum SandboxError {
     Git(String),
     #[error("rebuild script exited with status {0}; stderr tail: {1}")]
     RebuildFailed(i64, String),
-    #[error("checked-out HEAD ({actual}) does not match attested commit ({expected})")]
+    #[error("checked-out HEAD ({actual}) does not match pinned commit ({expected})")]
     CommitDrift { expected: String, actual: String },
 }
 
@@ -129,9 +129,26 @@ pub struct RebuildOutcome {
     pub artifact_path: PathBuf,
 }
 
+/// Source tree selected by a verified attestation or an explicit manual pin.
+/// Contains no assertion about builder identity or signature verification.
+#[derive(Debug, Clone)]
+pub struct RebuildSource {
+    pub source_repo: String,
+    pub commit_sha: String,
+}
+
+impl From<&ProvenanceClaim> for RebuildSource {
+    fn from(claim: &ProvenanceClaim) -> Self {
+        Self {
+            source_repo: claim.source_repo.clone(),
+            commit_sha: claim.commit_sha.clone(),
+        }
+    }
+}
+
 pub async fn rebuild(
     adapter: &dyn EcosystemAdapter,
-    claim: &ProvenanceClaim,
+    source: &RebuildSource,
     pkg: &PackageRef,
     workdir: &Path,
 ) -> Result<RebuildOutcome, SandboxError> {
@@ -140,12 +157,12 @@ pub async fn rebuild(
     std::fs::create_dir_all(&source_dir)?;
     std::fs::create_dir_all(&output_dir)?;
 
-    clone_and_pin(&claim.source_repo, &claim.commit_sha, &source_dir).await?;
+    clone_and_pin(&source.source_repo, &source.commit_sha, &source_dir).await?;
 
     let docker = Docker::connect_with_local_defaults()?;
     pull_image(&docker, adapter.rebuild_image()).await?;
 
-    let container_id = create_and_run(&docker, adapter, claim, pkg, &source_dir).await?;
+    let container_id = create_and_run(&docker, adapter, source, pkg, &source_dir).await?;
     let logs_tail = wait_and_collect_logs(&docker, &container_id).await?;
     let exit_code = container_exit_code(&docker, &container_id).await?;
     if exit_code != 0 {
@@ -166,17 +183,23 @@ pub async fn rebuild(
     Ok(RebuildOutcome { artifact_path })
 }
 
+fn clean_git_url(repo: &str) -> &str {
+    let repo = repo.strip_prefix("git+").unwrap_or(repo);
+    // A SLSA URI can end in @refs/heads/main. Preserve SSH user@host prefixes.
+    let path_start = repo.find("://").map_or(0, |i| i + 3);
+    let path_start = repo[path_start..].find('/').map(|i| path_start + i);
+    match (path_start, repo.rfind('@')) {
+        (Some(path), Some(at)) if at > path => &repo[..at],
+        _ => repo,
+    }
+}
+
 async fn clone_and_pin(repo: &str, commit: &str, dest: &Path) -> Result<(), SandboxError> {
     // Strip `git+` prefix and trailing ref to feed `git clone`.
-    let clean_url = repo
-        .strip_prefix("git+")
-        .unwrap_or(repo)
-        .split('@')
-        .next()
-        .unwrap_or(repo);
+    let clean_url = clean_git_url(repo);
 
     let status = Command::new("git")
-        .args(["clone", "--quiet", "--no-checkout", clean_url, "."])
+        .args(["clone", "--quiet", "--no-checkout", "--", clean_url, "."])
         .current_dir(dest)
         .stdin(Stdio::null())
         .status()
@@ -198,7 +221,7 @@ async fn clone_and_pin(repo: &str, commit: &str, dest: &Path) -> Result<(), Sand
         .map_err(|e| SandboxError::Git(format!("spawn fetch: {e}")))?;
 
     let checkout = Command::new("git")
-        .args(["checkout", "--quiet", commit])
+        .args(["checkout", "--quiet", "--detach", commit, "--"])
         .current_dir(dest)
         .stdin(Stdio::null())
         .status()
@@ -250,14 +273,14 @@ async fn pull_image(docker: &Docker, image: &str) -> Result<(), SandboxError> {
 async fn create_and_run(
     docker: &Docker,
     adapter: &dyn EcosystemAdapter,
-    claim: &ProvenanceClaim,
+    source: &RebuildSource,
     pkg: &PackageRef,
     source_dir: &Path,
 ) -> Result<String, SandboxError> {
     let script = adapter
         .rebuild_script()
-        .replace("{COMMIT_SHA}", &claim.commit_sha)
-        .replace("{REPO_URL}", &claim.source_repo)
+        .replace("{COMMIT_SHA}", &source.commit_sha)
+        .replace("{REPO_URL}", &source.source_repo)
         .replace("{PKG_NAME}", &pkg.name)
         .replace("{PKG_VERSION}", &pkg.version);
 
@@ -268,6 +291,10 @@ async fn create_and_run(
         image: Some(adapter.rebuild_image().to_string()),
         cmd: Some(vec!["/bin/sh".into(), "-c".into(), script]),
         working_dir: Some("/src".into()),
+        env: Some(vec![
+            format!("PKG_NAME={}", pkg.name),
+            format!("PKG_VERSION={}", pkg.version),
+        ]),
         host_config: Some(HostConfig {
             binds: Some(vec![bind]),
             auto_remove: Some(false),
@@ -276,7 +303,7 @@ async fn create_and_run(
         ..Default::default()
     };
 
-    let name = format!("clearhash-rebuild-{}", &claim.commit_sha[..12]);
+    let name = format!("clearhash-rebuild-{}", &source.commit_sha[..12]);
     let opts = CreateContainerOptions {
         name: Some(name.clone()),
         ..Default::default()
@@ -396,6 +423,186 @@ mod tests {
     use super::*;
     use clearhash_ecosystems::for_ecosystem;
     use std::io::Write;
+
+    fn git(repo: &Path, args: &[&str]) -> String {
+        let out = std::process::Command::new("git")
+            .args(args)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env(
+                "GIT_CONFIG_GLOBAL",
+                if cfg!(windows) { "NUL" } else { "/dev/null" },
+            )
+            .current_dir(repo)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap().trim().to_string()
+    }
+
+    fn commit_fixture(repo: &Path) -> String {
+        git(repo, &["add", "."]);
+        git(
+            repo,
+            &[
+                "-c",
+                "user.name=ClearHash Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-m",
+                "fixture",
+            ],
+        );
+        git(repo, &["rev-parse", "HEAD"])
+    }
+
+    #[test]
+    fn git_url_cleaning_preserves_ssh_users() {
+        for (input, expected) in [
+            (
+                "git+https://example.com/repo@refs/heads/main",
+                "https://example.com/repo",
+            ),
+            (
+                "git+ssh://git@example.com/owner/repo.git@refs/tags/v1",
+                "ssh://git@example.com/owner/repo.git",
+            ),
+            (
+                "ssh://git@example.com/owner/repo.git",
+                "ssh://git@example.com/owner/repo.git",
+            ),
+            (
+                "git@example.com:owner/repo.git",
+                "git@example.com:owner/repo.git",
+            ),
+        ] {
+            assert_eq!(clean_git_url(input), expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn checkout_pins_an_older_commit_and_rejects_a_ref() {
+        let repo = tempfile::tempdir().unwrap();
+        git(repo.path(), &["init", "--quiet"]);
+        std::fs::write(repo.path().join("source"), "original").unwrap();
+        let pin = commit_fixture(repo.path());
+        std::fs::write(repo.path().join("source"), "later").unwrap();
+        commit_fixture(repo.path());
+        let dest = tempfile::tempdir().unwrap();
+        clone_and_pin(repo.path().to_str().unwrap(), &pin, dest.path())
+            .await
+            .unwrap();
+        assert_eq!(git(dest.path(), &["rev-parse", "HEAD"]), pin);
+        assert_eq!(
+            std::fs::read_to_string(dest.path().join("source")).unwrap(),
+            "original"
+        );
+        let dest = tempfile::tempdir().unwrap();
+        assert!(matches!(
+            clone_and_pin(repo.path().to_str().unwrap(), "HEAD", dest.path()).await,
+            Err(SandboxError::CommitDrift { .. })
+        ));
+        let dest = tempfile::tempdir().unwrap();
+        assert!(
+            clone_and_pin(repo.path().to_str().unwrap(), &"0".repeat(40), dest.path())
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn cargo_pinned_workspace_rebuild_matches_and_detects_tampering() {
+        if !docker_reachable().await {
+            eprintln!("skipping Cargo rebuild: Docker daemon unreachable");
+            return;
+        }
+        let repo = tempfile::tempdir().unwrap();
+        git(repo.path(), &["init", "--quiet"]);
+        std::fs::create_dir_all(repo.path().join("member/src")).unwrap();
+        std::fs::write(
+            repo.path().join("Cargo.toml"),
+            "[workspace]\nmembers = [\"member\"]\nresolver = \"2\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo.path().join("member/Cargo.toml"),
+            "[package]\nname = \"clearhash-fixture\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo.path().join("member/src/lib.rs"),
+            "pub fn answer() -> u8 { 42 }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo.path().join("Cargo.lock"),
+            "version = 4\n\n[[package]]\nname = \"clearhash-fixture\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        let pin = commit_fixture(repo.path());
+        let pkg: PackageRef = "cargo:clearhash-fixture@1.0.0".parse().unwrap();
+        let adapter = for_ecosystem(pkg.ecosystem);
+        let source = RebuildSource {
+            source_repo: repo.path().to_string_lossy().into(),
+            commit_sha: pin,
+        };
+        let registry_dir = tempfile::tempdir().unwrap();
+        let registry = rebuild(&*adapter, &source, &pkg, registry_dir.path())
+            .await
+            .unwrap();
+        // The repository's default branch advances; verification must still rebuild the pin.
+        std::fs::write(
+            repo.path().join("member/src/lib.rs"),
+            "pub fn answer() -> u8 { 0 }\n",
+        )
+        .unwrap();
+        commit_fixture(repo.path());
+        let rebuilt_dir = tempfile::tempdir().unwrap();
+        let rebuilt = rebuild(&*adapter, &source, &pkg, rebuilt_dir.path())
+            .await
+            .unwrap();
+        let reg_root = extract_archive(
+            &*adapter,
+            &registry.artifact_path,
+            &pkg,
+            &registry_dir.path().join("registry"),
+        )
+        .unwrap();
+        let rb_root = extract_archive(
+            &*adapter,
+            &rebuilt.artifact_path,
+            &pkg,
+            &rebuilt_dir.path().join("rebuild"),
+        )
+        .unwrap();
+        assert!(reg_root.join(".cargo_vcs_info.json").is_file());
+        assert!(matches!(
+            compare_trees(&*adapter, &reg_root, &rb_root).unwrap(),
+            VerifyOutcome::Match { .. }
+        ));
+        std::fs::write(
+            reg_root.join("src/lib.rs"),
+            "pub fn answer() -> u8 { 99 }\n",
+        )
+        .unwrap();
+        let outcome = compare_trees(&*adapter, &reg_root, &rb_root).unwrap();
+        assert_eq!(outcome.exit_code(), 1);
+        assert!(
+            matches!(outcome, VerifyOutcome::TreeMismatch { differences } if differences.iter().any(|d| matches!(d, clearhash_core::TreeDifference::ContentDiffers { path } if path == "src/lib.rs")))
+        );
+        let wrong_version: PackageRef = "cargo:clearhash-fixture@9.0.0".parse().unwrap();
+        let wrong_dir = tempfile::tempdir().unwrap();
+        assert!(matches!(
+            rebuild(&*adapter, &source, &wrong_version, wrong_dir.path()).await,
+            Err(SandboxError::RebuildFailed(..))
+        ));
+    }
 
     fn make_npm_tarball(dir: &Path, name: &str, content: &str) -> PathBuf {
         let path = dir.join(name);

@@ -99,9 +99,9 @@ package.
 
 ## How it works
 
-1. Download the artifact and its SLSA attestation from npm, PyPI, or crates.io.
+1. Download the artifact and any published SLSA attestation from npm, PyPI, or crates.io.
 2. Check the certificate's Fulcio issuer identity, verify its DSSE signature, authenticate the Rekor checkpoint and Merkle inclusion proof, and confirm that the workflow URI names the source repository.
-3. Clone the source repository, check out the attested commit, and confirm that `HEAD` matches it.
+3. Clone the source repository, check out the attested commit (or the explicitly supplied Cargo source pin), and confirm that `HEAD` matches it.
 4. Rebuild the package in a pinned Docker image (`npm pack`, `python -m build --sdist`, or `cargo package`).
 5. Extract both archives, drop the metadata the registry adds, and compare their Merkle-hashed file trees. A match exits 0. A mismatch exits 1 with a per-file diff.
 
@@ -146,8 +146,10 @@ clearhash inspect npm:sigstore@2.3.1
 # JSON output for CI
 clearhash verify npm:sigstore@2.3.1 --json
 
-# Cargo packages without signatures: opt in explicitly
-clearhash verify --allow-unattested cargo:serde@1.0.197
+# Cargo: compare against a source repository and full commit SHA you trust
+clearhash verify cargo:example@1.0.0 --allow-unattested \
+  --source https://github.com/owner/example.git \
+  --commit 0123456789abcdef0123456789abcdef01234567
 
 # Keep the temporary folder to inspect a mismatch
 clearhash verify npm:foo@1.0.0 --keep-workdir
@@ -157,13 +159,29 @@ clearhash verify --simulate-tamper npm:sigstore@2.3.1
 clearhash verify --simulate-tamper=content-swap npm:sigstore@2.3.1
 ```
 
+Cargo requires all three flags: `--allow-unattested`, `--source`, and `--commit`.
+The commit must be a full 40-character hexadecimal SHA; branches, tags, and abbreviated
+SHAs are rejected. HTTPS, SSH, and local Git repositories are accepted. The selected
+crate must belong to the repository's root package or Cargo workspace, with a committed
+lockfile compatible with Rust 1.88.0. ClearHash packages the requested name and version
+using `cargo package --locked --no-verify`, retaining `.cargo_vcs_info.json` in the
+comparison. Other Rust toolchains may produce packaging differences. Cargo packaging
+can also re-resolve workspace path dependencies against crates.io, producing lockfile
+differences even with `--locked`; these remain visible as mismatches.
+
+A manual match proves that the downloaded crate matches the source you selected. It
+does not authenticate the publisher or certify that your source selection is correct.
+The source is never inferred from registry metadata. JSON verify results include
+`source_repo` and `source_verification` (`manual` or `attested`). Without a source pin,
+`--allow-unattested` still exits 2 without rebuilding. Manual pins apply only to Cargo.
+
 ## Exit codes
 
 | Code | Meaning |
 | ---- | ------------------------------------------------------------- |
 | 0    | Tree-hash match. Safe to install. |
 | 1    | Tree-hash mismatch or invalid signature. Block installation. |
-| 2    | No signature found, and `--allow-unattested` was not passed. |
+| 2    | No attestation and no explicitly allowed manual Cargo source pin. |
 | 3    | Infrastructure failure (no docker, network down, etc.). |
 
 ---
@@ -174,10 +192,10 @@ clearhash verify --simulate-tamper=content-swap npm:sigstore@2.3.1
 | --------- | ------------------- | ---------------------------------------------- | ----------------------------- |
 | **npm**   | ✅ end-to-end | `registry.npmjs.org/-/npm/v1/attestations/...` | `node:20.11.1-bookworm-slim` |
 | **PyPI**  | 🚧 adapter scaffold | PEP 740 `/integrity/.../provenance` | `python:3.12.2-slim-bookworm` |
-| **Cargo** | 🚧 adapter scaffold | none (`--allow-unattested` required) | `rust:1.78-slim-bookworm` |
+| **Cargo** | ✅ end-to-end with manual pin | none (`--allow-unattested --source --commit` required) | `rust:1.88.0-slim-bookworm` |
 
-The npm path is end-to-end working today. PyPI and Cargo land their full rebuild flows
-behind the same adapter interface without engine changes.
+The Cargo path rebuilds a manually pinned Git source through the same adapter and
+comparison pipeline used for attested packages.
 
 ---
 

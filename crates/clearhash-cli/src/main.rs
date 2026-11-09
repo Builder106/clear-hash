@@ -5,9 +5,10 @@ use std::str::FromStr;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use clearhash_core::{hex_digest, PackageRef};
+use clearhash_core::{hex_digest, Ecosystem, PackageRef};
 use clearhash_ecosystems::for_ecosystem;
 use clearhash_sandbox::simulate_tamper::TamperMode;
+use clearhash_sandbox::RebuildSource;
 use console::{style, Term};
 
 #[derive(Parser)]
@@ -35,9 +36,17 @@ enum Cmd {
         /// Package reference in `<ecosystem>:<name>@<version>` form.
         package: String,
 
-        /// Allow verification of packages with no SLSA attestation. Required for cargo.
+        /// Allow verification without a SLSA attestation using a manually pinned Cargo source.
         #[arg(long)]
         allow_unattested: bool,
+
+        /// Git repository to rebuild for an unattested Cargo crate.
+        #[arg(long, value_name = "GIT_URL", requires_all = ["commit", "allow_unattested"])]
+        source: Option<String>,
+
+        /// Full 40-character Git commit SHA for --source.
+        #[arg(long, value_name = "SHA", requires = "source", value_parser = parse_commit)]
+        commit: Option<String>,
 
         /// Keep the working directory (sandbox source tree, extracted archives) after exit.
         #[arg(long)]
@@ -109,17 +118,24 @@ async fn main() -> ExitCode {
         Cmd::Verify {
             package,
             allow_unattested,
+            source,
+            commit,
             keep_workdir,
             json,
             simulate_tamper,
         } => {
-            run_verify(
-                &package,
-                allow_unattested,
-                keep_workdir,
-                json,
-                simulate_tamper.map(TamperMode::from),
-            )
+            async {
+                let manual_source = manual_source(&package, source, commit)?;
+                run_verify(
+                    &package,
+                    allow_unattested,
+                    manual_source,
+                    keep_workdir,
+                    json,
+                    simulate_tamper.map(TamperMode::from),
+                )
+                .await
+            }
             .await
         }
     };
@@ -130,6 +146,41 @@ async fn main() -> ExitCode {
             eprintln!("{} {:#}", style("error:").red().bold(), e);
             ExitCode::from(3)
         }
+    }
+}
+
+fn parse_commit(value: &str) -> std::result::Result<String, String> {
+    if value.len() == 40 && value.bytes().all(|b| b.is_ascii_hexdigit()) {
+        Ok(value.to_ascii_lowercase())
+    } else {
+        Err("expected a full 40-character hexadecimal Git commit SHA".into())
+    }
+}
+
+fn manual_source(
+    package: &str,
+    source: Option<String>,
+    commit: Option<String>,
+) -> Result<Option<RebuildSource>> {
+    match (source, commit) {
+        (None, None) => Ok(None),
+        (Some(source_repo), Some(commit_sha)) => {
+            let pkg: PackageRef = package.parse().context("parsing package reference")?;
+            anyhow::ensure!(
+                pkg.ecosystem == Ecosystem::Cargo,
+                "--source and --commit are supported only for Cargo"
+            );
+            anyhow::ensure!(
+                !source_repo.trim().is_empty() && !source_repo.starts_with('-'),
+                "--source must name a Git repository"
+            );
+            let commit_sha = parse_commit(&commit_sha).map_err(anyhow::Error::msg)?;
+            Ok(Some(RebuildSource {
+                source_repo,
+                commit_sha,
+            }))
+        }
+        _ => anyhow::bail!("--source and --commit must be supplied together"),
     }
 }
 
@@ -212,6 +263,7 @@ async fn run_inspect(package: &str, json: bool) -> Result<i32> {
 async fn run_verify(
     package: &str,
     allow_unattested: bool,
+    manual_source: Option<RebuildSource>,
     keep_workdir: bool,
     json: bool,
     simulate_tamper: Option<TamperMode>,
@@ -246,8 +298,9 @@ async fn run_verify(
     ));
 
     // --- [2/5] Verify attestation ---
-    let claim = match (&fetched.attestation_bundle, allow_unattested) {
-        (Some(bytes), _) => {
+    let manually_pinned = fetched.attestation_bundle.is_none() && manual_source.is_some();
+    let source = match (&fetched.attestation_bundle, allow_unattested, manual_source) {
+        (Some(bytes), _, manual_source) => {
             let _ = term.write_line(&format!(
                 "{} Verifying Sigstore attestation",
                 style("[2/5]").cyan()
@@ -260,20 +313,24 @@ async fn run_verify(
                 &v.claim.commit_sha[..12.min(v.claim.commit_sha.len())],
                 v.identity.workflow_uri.as_deref().unwrap_or("?")
             ));
-            v.claim
+            anyhow::ensure!(
+                manual_source.is_none(),
+                "manual source cannot override an attestation"
+            );
+            RebuildSource::from(&v.claim)
         }
-        (None, true) => {
+        (None, true, Some(source)) => {
             let _ = term.write_line(&format!(
-                "{} {} No SLSA attestation; proceeding under --allow-unattested",
+                "{} {} No SLSA attestation; comparing against manually pinned source",
                 style("[2/5]").cyan(),
                 style("warn:").yellow()
             ));
-            return Ok(2);
+            source
         }
-        (None, false) => {
+        (None, _, _) => {
             let _ = term.write_line(&format!(
                 "{} No SLSA attestation published for {pkg}. \
-                 Pass --allow-unattested to verify the registry artifact's SHA alone.",
+                 For Cargo, pass --allow-unattested --source <git-url> --commit <sha> to rebuild and compare.",
                 style("error:").red()
             ));
             return Ok(2);
@@ -302,9 +359,9 @@ async fn run_verify(
     let _ = term.write_line(&format!(
         "{} Rebuilding from source at commit {}",
         style("[4/5]").cyan(),
-        &claim.commit_sha[..12.min(claim.commit_sha.len())]
+        &source.commit_sha[..12.min(source.commit_sha.len())]
     ));
-    let rebuild = clearhash_sandbox::rebuild(&*adapter, &claim, &pkg, &workdir_path)
+    let rebuild = clearhash_sandbox::rebuild(&*adapter, &source, &pkg, &workdir_path)
         .await
         .context("rebuilding from source")?;
     let _ = term.write_line(&format!("      built: {}", rebuild.artifact_path.display()));
@@ -349,13 +406,14 @@ async fn run_verify(
         let _ = term.write_line(&format!("      workdir kept at: {}", kept.display()));
     }
 
-    print_outcome(&pkg, &claim, &outcome, json)?;
+    print_outcome(&pkg, &source, manually_pinned, &outcome, json)?;
     Ok(outcome.exit_code())
 }
 
 fn print_outcome(
     pkg: &PackageRef,
-    claim: &clearhash_core::ProvenanceClaim,
+    source: &RebuildSource,
+    manually_pinned: bool,
     outcome: &clearhash_core::VerifyOutcome,
     json: bool,
 ) -> Result<()> {
@@ -363,7 +421,9 @@ fn print_outcome(
     if json {
         let v = serde_json::json!({
             "package": pkg.to_string(),
-            "commit": claim.commit_sha,
+            "commit": source.commit_sha,
+            "source_repo": source.source_repo,
+            "source_verification": if manually_pinned { "manual" } else { "attested" },
             "result": match outcome {
                 VerifyOutcome::Match { .. } => "match",
                 VerifyOutcome::TreeMismatch { .. } => "mismatch",
@@ -428,12 +488,15 @@ mod tests {
                 keep_workdir,
                 json,
                 simulate_tamper,
+                source,
+                commit,
             } => {
                 assert_eq!(package, "npm:left-pad@1.0.0");
                 assert!(!allow_unattested);
                 assert!(!keep_workdir);
                 assert!(!json);
                 assert!(simulate_tamper.is_none());
+                assert!(source.is_none() && commit.is_none());
             }
             _ => panic!("expected Verify"),
         }
@@ -461,6 +524,87 @@ mod tests {
             }
             _ => panic!("expected Verify"),
         }
+    }
+
+    const PIN: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    #[test]
+    fn cargo_manual_pin_requires_both_flags_and_unattested_consent() {
+        for flags in [
+            vec!["--source", "https://example.com/repo.git"],
+            vec!["--commit", PIN],
+            vec!["--source", "https://example.com/repo.git", "--commit", PIN],
+            vec![
+                "--allow-unattested",
+                "--source",
+                "https://example.com/repo.git",
+            ],
+            vec!["--allow-unattested", "--commit", PIN],
+        ] {
+            let mut args = vec!["clearhash", "verify", "cargo:example@1.0.0"];
+            args.extend(flags);
+            assert!(parse(&args).is_err());
+        }
+        let cli = parse(&[
+            "clearhash",
+            "verify",
+            "cargo:example@1.0.0",
+            "--allow-unattested",
+            "--source",
+            "git@example.com:owner/repo.git",
+            "--commit",
+            PIN,
+        ])
+        .unwrap();
+        let Cmd::Verify { source, commit, .. } = cli.command else {
+            panic!("expected Verify")
+        };
+        let pin = manual_source("cargo:example@1.0.0", source, commit)
+            .unwrap()
+            .unwrap();
+        assert_eq!(pin.source_repo, "git@example.com:owner/repo.git");
+        assert_eq!(pin.commit_sha, PIN);
+    }
+
+    #[test]
+    fn manual_pin_rejects_non_cargo_packages_and_invalid_repositories() {
+        for package in ["npm:x@1.0.0", "pypi:x@1.0.0"] {
+            assert!(manual_source(
+                package,
+                Some("https://example.com/repo".into()),
+                Some(PIN.into())
+            )
+            .is_err());
+        }
+        for repo in ["", "  ", "--upload-pack=anything"] {
+            assert!(manual_source("cargo:x@1.0.0", Some(repo.into()), Some(PIN.into())).is_err());
+        }
+    }
+
+    #[test]
+    fn commit_must_be_a_full_hex_sha() {
+        for commit in [
+            "main",
+            "v1.0.0",
+            "0123456",
+            "--help",
+            "gggggggggggggggggggggggggggggggggggggggg",
+            "0123456789abcdef0123456789abcdef012345678",
+        ] {
+            assert!(parse_commit(commit).is_err());
+            assert!(parse(&[
+                "clearhash",
+                "verify",
+                "cargo:x@1.0.0",
+                "--allow-unattested",
+                "--source",
+                "https://example.com/repo",
+                "--commit",
+                commit,
+            ])
+            .is_err());
+        }
+        assert_eq!(parse_commit(&PIN.to_ascii_uppercase()).unwrap(), PIN);
     }
 
     #[test]
