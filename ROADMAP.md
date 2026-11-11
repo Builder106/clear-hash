@@ -48,7 +48,7 @@ content-hash within a 0-day window.
   on the host (verifying registry-published integrity hashes), copy into the container,
   then run `npm ci --offline` (or pip's wheel cache equivalent) with no network.
 
-- [ ] This closes the "registry can lie during install" gap entirely.
+- [x] This closes the "registry can lie during install" gap entirely.
 
 ## v2 — install-time integration
 
