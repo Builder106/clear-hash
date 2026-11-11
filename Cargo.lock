@@ -733,6 +733,7 @@ dependencies = [
  "clearhash-ecosystems",
  "flate2",
  "futures-util",
+ "serde_json",
  "tar",
  "tempfile",
  "thiserror",

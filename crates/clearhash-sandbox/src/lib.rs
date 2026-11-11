@@ -160,7 +160,7 @@ pub async fn rebuild(
     clone_and_pin(&source.source_repo, &source.commit_sha, &source_dir).await?;
 
     let docker = Docker::connect_with_local_defaults()?;
-    pull_image(&docker, adapter.rebuild_image()).await?;
+    pull_image(&docker, adapter.rebuild_image(), adapter.rebuild_platform()).await?;
 
     let container_id = create_and_run(&docker, adapter, source, pkg, &source_dir).await?;
     let logs_tail = wait_and_collect_logs(&docker, &container_id).await?;
@@ -251,9 +251,14 @@ async fn clone_and_pin(repo: &str, commit: &str, dest: &Path) -> Result<(), Sand
     Ok(())
 }
 
-async fn pull_image(docker: &Docker, image: &str) -> Result<(), SandboxError> {
+async fn pull_image(
+    docker: &Docker,
+    image: &str,
+    platform: Option<&str>,
+) -> Result<(), SandboxError> {
     let options = CreateImageOptions {
         from_image: Some(image.to_string()),
+        platform: platform.unwrap_or_default().to_string(),
         ..Default::default()
     };
     let mut stream = docker.create_image(Some(options), None, None);
@@ -306,7 +311,7 @@ async fn create_and_run(
     let name = format!("clearhash-rebuild-{}", &source.commit_sha[..12]);
     let opts = CreateContainerOptions {
         name: Some(name.clone()),
-        ..Default::default()
+        platform: adapter.rebuild_platform().unwrap_or_default().to_string(),
     };
     let created = docker.create_container(Some(opts), config).await?;
     docker.start_container(&created.id, None).await?;
@@ -602,6 +607,136 @@ mod tests {
             rebuild(&*adapter, &source, &wrong_version, wrong_dir.path()).await,
             Err(SandboxError::RebuildFailed(..))
         ));
+    }
+
+    #[tokio::test]
+    async fn npm_native_platform_rebuild_matches_and_detects_binary_tampering() {
+        use clearhash_ecosystems::npm::{NpmAdapter, NpmPlatform};
+        if !docker_reachable().await {
+            eprintln!("skipping npm native rebuild: Docker daemon unreachable");
+            return;
+        }
+        let (platform, cpu) = match std::env::consts::ARCH {
+            "x86_64" => (NpmPlatform::LinuxAmd64, "x64"),
+            "aarch64" => (NpmPlatform::LinuxArm64, "arm64"),
+            _ => return,
+        };
+        let repo = tempfile::tempdir().unwrap();
+        git(repo.path(), &["init", "--quiet"]);
+        // Exercise selection of a platform-specific package in a workspace.
+        std::fs::create_dir_all(repo.path().join("native")).unwrap();
+        std::fs::write(
+            repo.path().join("package.json"),
+            r#"{"name":"fixture-root","private":true,"workspaces":["native"]}"#,
+        )
+        .unwrap();
+        let mut manifest = serde_json::json!({
+            "name": "@clearhash/addon-linux", "version": "1.0.0",
+            "os": ["linux"], "cpu": [cpu], "libc": ["glibc"],
+            "files": ["build/Release/addon.node"],
+            "scripts": {
+                "preinstall": "node -e 'process.exit(81)'",
+                "install": "node -e 'process.exit(82)'",
+                "postinstall": "node -e 'process.exit(83)'",
+                "prepare": "node -e 'process.exit(84)'",
+                "prepack": "node -e 'process.exit(85)'",
+                "prebuild": "node -e 'process.exit(86)'",
+                "postbuild": "node -e 'process.exit(87)'",
+                "build": format!("node -e \"if(process.arch !== '{cpu}' || require('./build/Release/addon.node').answer() !== 42) process.exit(1)\"")
+            }
+        });
+        let manifest_path = repo.path().join("native/package.json");
+        std::fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        std::fs::write(
+            repo.path().join("native/binding.gyp"),
+            r#"{"targets":[{"target_name":"addon","sources":["addon.c"]}]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            repo.path().join("native/addon.c"),
+            r#"
+#include <node_api.h>
+static napi_value answer(napi_env env, napi_callback_info info) {
+    napi_value value;
+    napi_create_int32(env, 42, &value);
+    return value;
+}
+static napi_value init(napi_env env, napi_value exports) {
+    napi_value fn;
+    napi_create_function(env, "answer", NAPI_AUTO_LENGTH, answer, NULL, &fn);
+    napi_set_named_property(env, exports, "answer", fn);
+    return exports;
+}
+NAPI_MODULE(NODE_GYP_MODULE_NAME, init)
+"#,
+        )
+        .unwrap();
+        let source = RebuildSource {
+            source_repo: repo.path().to_string_lossy().into(),
+            commit_sha: commit_fixture(repo.path()),
+        };
+        let pkg: PackageRef = "npm:@clearhash/addon-linux@1.0.0".parse().unwrap();
+        let adapter = NpmAdapter::for_platform(platform);
+        let registry_dir = tempfile::tempdir().unwrap();
+        let registry = rebuild(&adapter, &source, &pkg, registry_dir.path())
+            .await
+            .unwrap();
+        let rebuild_dir = tempfile::tempdir().unwrap();
+        let rebuilt = rebuild(&adapter, &source, &pkg, rebuild_dir.path())
+            .await
+            .unwrap();
+        let reg_root = extract_archive(
+            &adapter,
+            &registry.artifact_path,
+            &pkg,
+            &registry_dir.path().join("tree"),
+        )
+        .unwrap();
+        let rb_root = extract_archive(
+            &adapter,
+            &rebuilt.artifact_path,
+            &pkg,
+            &rebuild_dir.path().join("tree"),
+        )
+        .unwrap();
+        let binary = reg_root.join("build/Release/addon.node");
+        assert!(std::fs::read(&binary).unwrap().starts_with(b"\x7fELF"));
+        assert!(matches!(
+            compare_trees(&adapter, &reg_root, &rb_root).unwrap(),
+            VerifyOutcome::Match { .. }
+        ));
+        std::fs::write(binary, b"tampered native binary").unwrap();
+        assert!(
+            matches!(compare_trees(&adapter, &reg_root, &rb_root).unwrap(),
+            VerifyOutcome::TreeMismatch { differences } if differences.iter().any(|d| matches!(d,
+                clearhash_core::TreeDifference::ContentDiffers { path } if path == "build/Release/addon.node")))
+        );
+
+        // A build failure must not be swallowed, packed, or reported as a match.
+        manifest["scripts"]["build"] = serde_json::json!("node -e 'process.exit(19)'");
+        std::fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        let source = RebuildSource {
+            commit_sha: commit_fixture(repo.path()),
+            ..source
+        };
+        let failed_dir = tempfile::tempdir().unwrap();
+        assert!(matches!(
+            rebuild(&adapter, &source, &pkg, failed_dir.path()).await,
+            Err(SandboxError::RebuildFailed(..))
+        ));
+
+        // Source constraints are checked independently of registry declarations.
+        manifest["os"] = serde_json::json!(["darwin"]);
+        std::fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        let source = RebuildSource {
+            commit_sha: commit_fixture(repo.path()),
+            ..source
+        };
+        let failed_dir = tempfile::tempdir().unwrap();
+        assert!(
+            matches!(rebuild(&adapter, &source, &pkg, failed_dir.path()).await,
+            Err(SandboxError::RebuildFailed(_, log)) if log.contains("source os does not support linux"))
+        );
     }
 
     fn make_npm_tarball(dir: &Path, name: &str, content: &str) -> PathBuf {

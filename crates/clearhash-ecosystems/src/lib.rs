@@ -78,6 +78,11 @@ pub trait EcosystemAdapter: Send + Sync {
 
     // --- Steps 3-4: how to rebuild -----------------------------------------------------
 
+    /// Optional OCI platform used consistently for image pull and container execution.
+    fn rebuild_platform(&self) -> Option<&'static str> {
+        None
+    }
+
     /// Pinned Docker image. Never tag-track; always pin a digest in production.
     fn rebuild_image(&self) -> &'static str;
 
@@ -186,6 +191,8 @@ fn path_matches(pattern: &str, path: &str) -> bool {
 pub enum AdapterError {
     #[error("malformed attestation: {0}")]
     MalformedAttestation(String),
+    #[error("unsupported or invalid rebuild: {0}")]
+    InvalidRebuild(String),
     #[error("walking the tree: {0}")]
     Walk(String),
     #[error("ecosystem not yet implemented for this step: {0}")]
@@ -195,7 +202,7 @@ pub enum AdapterError {
 /// Dispatch helper used by the CLI.
 pub fn for_ecosystem(eco: Ecosystem) -> Box<dyn EcosystemAdapter> {
     match eco {
-        Ecosystem::Npm => Box::new(npm::NpmAdapter),
+        Ecosystem::Npm => Box::new(npm::NpmAdapter::default()),
         Ecosystem::Pypi => Box::new(pypi::PypiAdapter),
         Ecosystem::Cargo => Box::new(cargo::CargoAdapter),
     }

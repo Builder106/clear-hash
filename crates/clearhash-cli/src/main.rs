@@ -7,6 +7,8 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use clearhash_core::{hex_digest, Ecosystem, PackageRef};
 use clearhash_ecosystems::for_ecosystem;
+use clearhash_ecosystems::npm::{NpmAdapter, NpmPlatform};
+use clearhash_ecosystems::EcosystemAdapter;
 use clearhash_sandbox::simulate_tamper::TamperMode;
 use clearhash_sandbox::RebuildSource;
 use console::{style, Term};
@@ -47,6 +49,10 @@ enum Cmd {
         /// Full 40-character Git commit SHA for --source.
         #[arg(long, value_name = "SHA", requires = "source", value_parser = parse_commit)]
         commit: Option<String>,
+
+        /// Native npm rebuild target: linux/amd64 or linux/arm64 (glibc).
+        #[arg(long, value_name = "OS/ARCH")]
+        platform: Option<NpmPlatform>,
 
         /// Keep the working directory (sandbox source tree, extracted archives) after exit.
         #[arg(long)]
@@ -120,6 +126,7 @@ async fn main() -> ExitCode {
             allow_unattested,
             source,
             commit,
+            platform,
             keep_workdir,
             json,
             simulate_tamper,
@@ -133,6 +140,7 @@ async fn main() -> ExitCode {
                     keep_workdir,
                     json,
                     simulate_tamper.map(TamperMode::from),
+                    platform,
                 )
                 .await
             }
@@ -260,6 +268,22 @@ async fn run_inspect(package: &str, json: bool) -> Result<i32> {
     Ok(0)
 }
 
+fn verification_adapter(
+    pkg: &PackageRef,
+    platform: Option<NpmPlatform>,
+) -> Result<Box<dyn EcosystemAdapter>> {
+    match platform {
+        Some(platform) => {
+            anyhow::ensure!(
+                pkg.ecosystem == Ecosystem::Npm,
+                "--platform is supported only for npm"
+            );
+            Ok(Box::new(NpmAdapter::for_platform(platform)))
+        }
+        None => Ok(for_ecosystem(pkg.ecosystem)),
+    }
+}
+
 async fn run_verify(
     package: &str,
     allow_unattested: bool,
@@ -267,9 +291,10 @@ async fn run_verify(
     keep_workdir: bool,
     json: bool,
     simulate_tamper: Option<TamperMode>,
+    platform: Option<NpmPlatform>,
 ) -> Result<i32> {
     let pkg = PackageRef::from_str(package).context("parsing package reference")?;
-    let adapter = for_ecosystem(pkg.ecosystem);
+    let adapter = verification_adapter(&pkg, platform)?;
     let term = Term::stderr();
 
     if let Some(mode) = simulate_tamper {
@@ -406,7 +431,7 @@ async fn run_verify(
         let _ = term.write_line(&format!("      workdir kept at: {}", kept.display()));
     }
 
-    print_outcome(&pkg, &source, manually_pinned, &outcome, json)?;
+    print_outcome(&pkg, &source, manually_pinned, &outcome, json, platform)?;
     Ok(outcome.exit_code())
 }
 
@@ -416,6 +441,7 @@ fn print_outcome(
     manually_pinned: bool,
     outcome: &clearhash_core::VerifyOutcome,
     json: bool,
+    platform: Option<NpmPlatform>,
 ) -> Result<()> {
     use clearhash_core::VerifyOutcome;
     if json {
@@ -423,6 +449,7 @@ fn print_outcome(
             "package": pkg.to_string(),
             "commit": source.commit_sha,
             "source_repo": source.source_repo,
+            "platform": platform.map(NpmPlatform::as_str),
             "source_verification": if manually_pinned { "manual" } else { "attested" },
             "result": match outcome {
                 VerifyOutcome::Match { .. } => "match",
@@ -438,6 +465,9 @@ fn print_outcome(
         });
         println!("{}", serde_json::to_string_pretty(&v)?);
         return Ok(());
+    }
+    if let Some(platform) = platform {
+        println!("Platform      {} (glibc)", platform.as_str());
     }
     match outcome {
         VerifyOutcome::Match { tree_hash } => {
@@ -490,6 +520,7 @@ mod tests {
                 simulate_tamper,
                 source,
                 commit,
+                platform,
             } => {
                 assert_eq!(package, "npm:left-pad@1.0.0");
                 assert!(!allow_unattested);
@@ -497,6 +528,7 @@ mod tests {
                 assert!(!json);
                 assert!(simulate_tamper.is_none());
                 assert!(source.is_none() && commit.is_none());
+                assert!(platform.is_none());
             }
             _ => panic!("expected Verify"),
         }
@@ -605,6 +637,51 @@ mod tests {
             .is_err());
         }
         assert_eq!(parse_commit(&PIN.to_ascii_uppercase()).unwrap(), PIN);
+    }
+
+    #[test]
+    fn native_platform_requires_a_supported_npm_target() {
+        for value in ["linux/amd64", "linux/arm64"] {
+            let cli = parse(&[
+                "clearhash",
+                "verify",
+                "npm:@example/addon-linux-arm64@1.0.0",
+                "--platform",
+                value,
+            ])
+            .unwrap();
+            let Cmd::Verify {
+                platform, package, ..
+            } = cli.command
+            else {
+                panic!("expected Verify")
+            };
+            let adapter = verification_adapter(&package.parse().unwrap(), platform).unwrap();
+            assert_eq!(adapter.rebuild_platform(), Some(value));
+        }
+        for value in [
+            "darwin/arm64",
+            "windows/amd64",
+            "linux/x64",
+            "linux/arm64/musl",
+            "linux",
+            "",
+        ] {
+            assert!(parse(&["clearhash", "verify", "npm:x@1.0.0", "--platform", value]).is_err());
+        }
+        for pkg in ["cargo:x@1.0.0", "pypi:x@1.0.0"] {
+            assert!(
+                verification_adapter(&pkg.parse().unwrap(), Some(NpmPlatform::LinuxAmd64)).is_err()
+            );
+        }
+        assert!(parse(&[
+            "clearhash",
+            "inspect",
+            "npm:x@1.0.0",
+            "--platform",
+            "linux/arm64"
+        ])
+        .is_err());
     }
 
     #[test]

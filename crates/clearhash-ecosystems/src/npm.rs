@@ -10,9 +10,55 @@ use clearhash_core::{Ecosystem, PackageRef, ProvenanceClaim};
 use serde::Deserialize;
 use url::Url;
 
-use crate::{AdapterError, EcosystemAdapter};
+use crate::{AdapterError, EcosystemAdapter, ReleaseUrls};
 
-pub struct NpmAdapter;
+/// Linux/glibc execution targets supported by the pinned native build image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NpmPlatform {
+    LinuxAmd64,
+    LinuxArm64,
+}
+
+impl NpmPlatform {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::LinuxAmd64 => "linux/amd64",
+            Self::LinuxArm64 => "linux/arm64",
+        }
+    }
+
+    fn cpu(self) -> &'static str {
+        match self {
+            Self::LinuxAmd64 => "x64",
+            Self::LinuxArm64 => "arm64",
+        }
+    }
+}
+
+impl std::str::FromStr for NpmPlatform {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "linux/amd64" => Ok(Self::LinuxAmd64),
+            "linux/arm64" => Ok(Self::LinuxArm64),
+            _ => Err("supported npm platforms: linux/amd64, linux/arm64 (glibc); macOS, Windows and musl require different runners".into()),
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct NpmAdapter {
+    platform: Option<NpmPlatform>,
+}
+
+impl NpmAdapter {
+    pub fn for_platform(platform: NpmPlatform) -> Self {
+        Self {
+            platform: Some(platform),
+        }
+    }
+}
 
 #[async_trait]
 impl EcosystemAdapter for NpmAdapter {
@@ -42,6 +88,60 @@ impl EcosystemAdapter for NpmAdapter {
             pkg.name, pkg.version
         );
         Some(Url::parse(&raw).expect("npm attestation URL"))
+    }
+
+    fn release_metadata_url(&self, pkg: &PackageRef) -> Option<Url> {
+        self.platform.map(|_| {
+            Url::parse(&format!(
+                "https://registry.npmjs.org/{}/{}",
+                pkg.name, pkg.version
+            ))
+            .expect("npm release metadata URL")
+        })
+    }
+
+    fn parse_release_urls(
+        &self,
+        body: &[u8],
+        pkg: &PackageRef,
+    ) -> Result<ReleaseUrls, AdapterError> {
+        let release: NativeRelease = serde_json::from_slice(body)
+            .map_err(|e| AdapterError::InvalidRebuild(format!("npm release metadata: {e}")))?;
+        if release.name != pkg.name || release.version != pkg.version {
+            return Err(AdapterError::InvalidRebuild(
+                "npm release name/version does not match requested package".into(),
+            ));
+        }
+        let platform = self
+            .platform
+            .ok_or_else(|| AdapterError::InvalidRebuild("npm platform not selected".into()))?;
+        for (field, values, target) in [
+            ("os", release.os, "linux"),
+            ("cpu", release.cpu, platform.cpu()),
+            ("libc", release.libc, "glibc"),
+        ] {
+            if !allows_target(values.as_deref(), target) {
+                return Err(AdapterError::InvalidRebuild(format!(
+                    "npm {field} constraint does not support {} (glibc)",
+                    platform.as_str()
+                )));
+            }
+        }
+        let artifact_url = Url::parse(&release.dist.tarball)
+            .map_err(|e| AdapterError::InvalidRebuild(format!("npm dist.tarball: {e}")))?;
+        if artifact_url.scheme() != "https" || artifact_url.host_str().is_none() {
+            return Err(AdapterError::InvalidRebuild(
+                "npm dist.tarball must be an HTTPS URL".into(),
+            ));
+        }
+        Ok(ReleaseUrls {
+            artifact_url,
+            attestation_url: self.attestation_url(pkg),
+        })
+    }
+
+    fn rebuild_platform(&self) -> Option<&'static str> {
+        self.platform.map(NpmPlatform::as_str)
     }
 
     fn latest_version_url(&self, name: &str) -> Option<Url> {
@@ -100,7 +200,13 @@ impl EcosystemAdapter for NpmAdapter {
 
     fn rebuild_image(&self) -> &'static str {
         // Pin exact patch version; CI updates this via Renovate.
-        "node:20.11.1-bookworm-slim"
+        if self.platform.is_some() {
+            // buildpack-deps supplies Python, make and the C/C++ compiler; Node headers
+            // ship in /usr/local/include/node. No mutable apt install at build time.
+            "node:24.11.0-bookworm"
+        } else {
+            "node:20.11.1-bookworm-slim"
+        }
     }
 
     fn rebuild_script(&self) -> &'static str {
@@ -110,64 +216,14 @@ impl EcosystemAdapter for NpmAdapter {
         // Monorepo handling: walk the source tree to find the package.json whose name+version
         // match the attested package. Run `npm ci` at the repo root (handles workspaces), then
         // `npm pack` from the target subdir.
-        r#"set -eu
-mkdir -p /out
-cd /src
-export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct {COMMIT_SHA} 2>/dev/null || echo 0)"
-export TZ=UTC
-export npm_config_update_notifier=false
-export PKG_NAME='{PKG_NAME}'
-export PKG_VERSION='{PKG_VERSION}'
-
-TARGET_DIR=$(node -e '
-  const fs = require("fs"); const path = require("path");
-  function walk(dir) {
-    let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return null; }
-    for (const e of entries) {
-      if (e.name === "node_modules" || e.name === ".git") continue;
-      const p = path.join(dir, e.name);
-      if (e.isDirectory()) { const r = walk(p); if (r) return r; }
-      else if (e.name === "package.json") {
-        try {
-          const j = JSON.parse(fs.readFileSync(p, "utf8"));
-          if (j.name === process.env.PKG_NAME && j.version === process.env.PKG_VERSION) {
-            return path.dirname(p);
-          }
-        } catch {}
-      }
-    }
-    return null;
-  }
-  console.log(walk(process.cwd()) || "");
-')
-if [ -z "$TARGET_DIR" ]; then
-  echo "clearhash: could not locate $PKG_NAME@$PKG_VERSION in source tree" >&2
-  exit 1
-fi
-echo "clearhash: rebuilding from $TARGET_DIR" >&2
-
-# Workspace install at the repo root (handles npm/yarn/pnpm workspaces).
-if [ -f package-lock.json ]; then
-  npm ci --ignore-scripts --no-audit --no-fund
-elif [ -f yarn.lock ]; then
-  corepack enable >/dev/null 2>&1 || true
-  yarn install --frozen-lockfile --ignore-scripts >/dev/null
-elif [ -f pnpm-lock.yaml ]; then
-  corepack enable >/dev/null 2>&1 || true
-  pnpm install --frozen-lockfile --ignore-scripts >/dev/null
-else
-  npm install --ignore-scripts --no-audit --no-fund
-fi
-
-cd "$TARGET_DIR"
-# If a `prepack` / `prepare` script exists, run it explicitly (we used --ignore-scripts above).
-# Many monorepos rely on this to generate dist/ before pack.
-if node -e 'const p=require("./package.json"); process.exit(p.scripts && (p.scripts.build || p.scripts.prepack || p.scripts.prepare) ? 0 : 1)' 2>/dev/null; then
-  npm run build --if-present || true
-fi
-npm pack --pack-destination=/out
-"#
+        if self.platform.is_some() {
+            concat!(
+                "export CLEARHASH_NATIVE_REBUILD=1\n",
+                include_str!("npm-rebuild.sh")
+            )
+        } else {
+            include_str!("npm-rebuild.sh")
+        }
     }
 
     fn built_artifact_dir(&self) -> &'static str {
@@ -207,6 +263,30 @@ npm pack --pack-destination=/out
         }
         serde_json::to_vec_pretty(&v).unwrap_or(bytes)
     }
+}
+
+#[derive(Deserialize)]
+struct NativeRelease {
+    name: String,
+    version: String,
+    os: Option<Vec<String>>,
+    cpu: Option<Vec<String>>,
+    libc: Option<Vec<String>>,
+    dist: NativeDist,
+}
+
+#[derive(Deserialize)]
+struct NativeDist {
+    tarball: String,
+}
+
+// npm permits positive allowlists and negative exclusions; exclusions take precedence.
+fn allows_target(values: Option<&[String]>, target: &str) -> bool {
+    let Some(values) = values else { return true };
+    !values.iter().any(|v| v.strip_prefix('!') == Some(target))
+        && (values.is_empty()
+            || values.iter().all(|v| v.starts_with('!'))
+            || values.iter().any(|v| v == target || v == "any"))
 }
 
 // --- Envelope types: just enough fields to extract (repo, commit). ----------------------
@@ -358,7 +438,7 @@ mod tests {
 
     #[test]
     fn artifact_url_unscoped() {
-        let u = NpmAdapter.artifact_url(&pkg("litellm", "1.82.7"));
+        let u = NpmAdapter::default().artifact_url(&pkg("litellm", "1.82.7"));
         assert_eq!(
             u.as_str(),
             "https://registry.npmjs.org/litellm/-/litellm-1.82.7.tgz"
@@ -367,7 +447,7 @@ mod tests {
 
     #[test]
     fn artifact_url_scoped_uses_unscoped_filename() {
-        let u = NpmAdapter.artifact_url(&pkg("@sigstore/sign", "2.3.1"));
+        let u = NpmAdapter::default().artifact_url(&pkg("@sigstore/sign", "2.3.1"));
         // The path keeps the scope, the filename does not.
         assert_eq!(
             u.as_str(),
@@ -377,7 +457,7 @@ mod tests {
 
     #[test]
     fn attestation_url_shape() {
-        let u = NpmAdapter
+        let u = NpmAdapter::default()
             .attestation_url(&pkg("sigstore", "2.3.1"))
             .unwrap();
         assert_eq!(
@@ -397,7 +477,7 @@ mod tests {
     #[test]
     fn normalize_strips_registry_metadata() {
         let input = br#"{"name":"x","version":"1","_id":"x@1","_integrity":"sha512-...","dist":{"shasum":"abc"},"main":"index.js"}"#;
-        let out = NpmAdapter.normalize_file("package.json", input.to_vec());
+        let out = NpmAdapter::default().normalize_file("package.json", input.to_vec());
         let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert!(v.get("_id").is_none());
         assert!(v.get("_integrity").is_none());
@@ -422,11 +502,97 @@ mod tests {
                 }
             }]
         });
-        let claim = NpmAdapter
+        let claim = NpmAdapter::default()
             .parse_attestation(&serde_json::to_vec(&bundle).unwrap())
             .unwrap();
         assert_eq!(claim.commit_sha, "7c2bdaa1e5d3fa6c2e1b1a1d4f5e6c7b8a9d0e1f");
         assert!(claim.source_repo.contains("example/repo"));
+    }
+
+    fn native_metadata() -> serde_json::Value {
+        serde_json::json!({
+            "name": "@example/addon-linux-arm64", "version": "1.0.0",
+            "os": ["linux"], "cpu": ["arm64"], "libc": ["glibc"],
+            "dist": { "tarball": "https://registry.npmjs.org/custom/addon-linux-arm64.tgz" }
+        })
+    }
+
+    #[test]
+    fn native_release_resolves_exact_platform_tarball_and_attestation() {
+        let adapter = NpmAdapter::for_platform(NpmPlatform::LinuxArm64);
+        let pkg = pkg("@example/addon-linux-arm64", "1.0.0");
+        assert_eq!(adapter.rebuild_platform(), Some("linux/arm64"));
+        assert_eq!(adapter.rebuild_image(), "node:24.11.0-bookworm");
+        assert_eq!(
+            adapter.release_metadata_url(&pkg).unwrap().as_str(),
+            "https://registry.npmjs.org/@example/addon-linux-arm64/1.0.0"
+        );
+        let release = adapter
+            .parse_release_urls(&serde_json::to_vec(&native_metadata()).unwrap(), &pkg)
+            .unwrap();
+        assert_eq!(
+            release.artifact_url.as_str(),
+            "https://registry.npmjs.org/custom/addon-linux-arm64.tgz"
+        );
+        assert_eq!(release.attestation_url, adapter.attestation_url(&pkg));
+        let js = NpmAdapter::default();
+        assert_eq!(js.rebuild_platform(), None);
+        assert_eq!(js.release_metadata_url(&pkg), None);
+        assert_eq!(js.rebuild_image(), "node:20.11.1-bookworm-slim");
+    }
+
+    #[test]
+    fn native_metadata_rejects_incompatible_or_malformed_releases() {
+        let adapter = NpmAdapter::for_platform(NpmPlatform::LinuxArm64);
+        let pkg = pkg("@example/addon-linux-arm64", "1.0.0");
+        for (field, value) in [
+            ("os", serde_json::json!(["darwin"])),
+            ("os", serde_json::json!(["linux", "!linux"])),
+            ("cpu", serde_json::json!(["x64"])),
+            ("cpu", serde_json::json!(["!arm64"])),
+            ("libc", serde_json::json!(["musl"])),
+            ("cpu", serde_json::json!("arm64")),
+            ("cpu", serde_json::json!([42])),
+            ("name", serde_json::json!("another-package")),
+            ("version", serde_json::json!("2.0.0")),
+            (
+                "dist",
+                serde_json::json!({"tarball": "file:///tmp/addon.tgz"}),
+            ),
+            ("dist", serde_json::json!({"tarball": "invalid-url"})),
+            ("dist", serde_json::json!({})),
+        ] {
+            let mut metadata = native_metadata();
+            metadata[field] = value;
+            assert!(
+                adapter
+                    .parse_release_urls(&serde_json::to_vec(&metadata).unwrap(), &pkg)
+                    .is_err(),
+                "accepted {metadata}"
+            );
+        }
+        assert!(adapter.parse_release_urls(b"not json", &pkg).is_err());
+        assert!(NpmAdapter::for_platform(NpmPlatform::LinuxAmd64)
+            .parse_release_urls(&serde_json::to_vec(&native_metadata()).unwrap(), &pkg)
+            .is_err());
+    }
+
+    #[test]
+    fn npm_platform_constraints_support_allowlists_and_exclusions() {
+        for (values, expected) in [
+            (None, true),
+            (Some(vec![]), true),
+            (Some(vec!["any"]), true),
+            (Some(vec!["!darwin"]), true),
+            (Some(vec!["linux", "darwin"]), true),
+            (Some(vec!["darwin"]), false),
+            (Some(vec!["!linux"]), false),
+            (Some(vec!["any", "!linux"]), false),
+        ] {
+            let values: Option<Vec<String>> =
+                values.map(|v| v.into_iter().map(String::from).collect());
+            assert_eq!(allows_target(values.as_deref(), "linux"), expected);
+        }
     }
 
     #[test]
@@ -449,7 +615,7 @@ mod tests {
                 }
             }]
         });
-        let claim = NpmAdapter
+        let claim = NpmAdapter::default()
             .parse_attestation(&serde_json::to_vec(&bundle).unwrap())
             .unwrap();
         assert_eq!(claim.commit_sha, "deadbeefcafe1234567890abcdef0987654321ab");
@@ -480,7 +646,7 @@ mod tests {
                 }
             ]
         });
-        let claim = NpmAdapter
+        let claim = NpmAdapter::default()
             .parse_attestation(&serde_json::to_vec(&bundle).unwrap())
             .unwrap();
         assert_eq!(claim.commit_sha, "abcdef1234567890abcdef1234567890abcdef12");

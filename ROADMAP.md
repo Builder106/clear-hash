@@ -31,7 +31,7 @@ Concrete next steps, ordered by user-visible impact.
   add `--source <git-url> --commit <sha>` flags so users can verify a crate against a
   manually-pinned source tree. The rebuild + compare pipeline already exists.
 
-- [ ] **npm: wheel-equivalent platform-tagged tarballs.** Native modules (`fsevents`, etc.)
+- [x] **npm: wheel-equivalent platform-tagged tarballs.** Native modules (`fsevents`, etc.)
 
   publish per-platform tarballs. v1.1 verifies platform-independent JS only; v1.2 adds
   per-platform rebuilds.

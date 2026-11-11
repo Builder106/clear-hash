@@ -253,7 +253,7 @@ mod tests {
         for (path, replacement) in replacements {
             let mut root = fixture();
             *root.pointer_mut(&format!("{ENTRY}{path}")).unwrap() = replacement;
-            let error = crate::verify(&NpmAdapter, &serde_json::to_vec(&root).unwrap())
+            let error = crate::verify(&NpmAdapter::default(), &serde_json::to_vec(&root).unwrap())
                 .await
                 .unwrap_err();
             assert!(
@@ -317,7 +317,7 @@ mod tests {
         let other =
             root["attestations"][0]["bundle"]["verificationMaterial"]["tlogEntries"][0].clone();
         *root.pointer_mut(ENTRY).unwrap() = other;
-        let error = crate::verify(&NpmAdapter, &serde_json::to_vec(&root).unwrap())
+        let error = crate::verify(&NpmAdapter::default(), &serde_json::to_vec(&root).unwrap())
             .await
             .unwrap_err();
         assert!(

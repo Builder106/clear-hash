@@ -461,7 +461,7 @@ mod tests {
 
     #[tokio::test]
     async fn verifies_real_cosign_dsse_signature() {
-        let res = verify(&NpmAdapter, FIXTURE_SIGSTORE.as_bytes())
+        let res = verify(&NpmAdapter::default(), FIXTURE_SIGSTORE.as_bytes())
             .await
             .expect("real signature must verify");
         assert_eq!(
@@ -524,9 +524,12 @@ mod tests {
         let clean_b64 = base64_encode(tampered_text.as_bytes());
         *payload_str = serde_json::Value::String(clean_b64);
 
-        let err = verify(&NpmAdapter, &serde_json::to_vec(&bundle).unwrap())
-            .await
-            .unwrap_err();
+        let err = verify(
+            &NpmAdapter::default(),
+            &serde_json::to_vec(&bundle).unwrap(),
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(err, ProvenanceError::SignatureVerificationFailed));
     }
 
@@ -541,9 +544,12 @@ mod tests {
         bytes[20] = if bytes[20] == b'A' { b'B' } else { b'A' };
         *sig_str = serde_json::Value::String(String::from_utf8(bytes).unwrap());
 
-        let err = verify(&NpmAdapter, &serde_json::to_vec(&bundle).unwrap())
-            .await
-            .unwrap_err();
+        let err = verify(
+            &NpmAdapter::default(),
+            &serde_json::to_vec(&bundle).unwrap(),
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(err, ProvenanceError::SignatureVerificationFailed));
     }
 
@@ -607,9 +613,12 @@ mod tests {
             .pointer_mut("/attestations/1/bundle/dsseEnvelope/signatures")
             .unwrap() = serde_json::json!([]);
 
-        let err = verify(&NpmAdapter, &serde_json::to_vec(&bundle).unwrap())
-            .await
-            .unwrap_err();
+        let err = verify(
+            &NpmAdapter::default(),
+            &serde_json::to_vec(&bundle).unwrap(),
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(err, ProvenanceError::MissingDsseSignature));
     }
 
@@ -739,9 +748,12 @@ mod tests {
             .pointer_mut("/attestations/1/bundle/verificationMaterial/x509CertificateChain/certificates/0/rawBytes")
             .unwrap() = serde_json::Value::String(base64_encode(&fake_cert));
 
-        let err = verify(&NpmAdapter, &serde_json::to_vec(&bundle).unwrap())
-            .await
-            .unwrap_err();
+        let err = verify(
+            &NpmAdapter::default(),
+            &serde_json::to_vec(&bundle).unwrap(),
+        )
+        .await
+        .unwrap_err();
         assert!(
             matches!(err, ProvenanceError::SctVerification(ref msg) if msg.contains("missing SCT extension")),
             "expected SCT verification error, got: {err}"

@@ -21,3 +21,6 @@ walkdir = { workspace = true }
 bollard = "0.21"
 futures-util = "0.3"
 bytes = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

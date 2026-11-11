@@ -146,6 +146,9 @@ clearhash inspect npm:sigstore@2.3.1
 # JSON output for CI
 clearhash verify npm:sigstore@2.3.1 --json
 
+# Native npm: select the published platform package and its Linux/glibc build target
+clearhash verify npm:@example/addon-linux-arm64@1.0.0 --platform linux/arm64
+
 # Cargo: compare against a source repository and full commit SHA you trust
 clearhash verify cargo:example@1.0.0 --allow-unattested \
   --source https://github.com/owner/example.git \
@@ -175,6 +178,25 @@ The source is never inferred from registry metadata. JSON verify results include
 `source_repo` and `source_verification` (`manual` or `attested`). Without a source pin,
 `--allow-unattested` still exits 2 without rebuilding. Manual pins apply only to Cargo.
 
+For native npm packages, `--platform linux/amd64` or `--platform linux/arm64` selects
+an actual Docker execution architecture and the compiler-equipped
+`node:24.11.0-bookworm` image (Node 24 ABI, glibc). Docker must support the selected
+architecture natively or through configured emulation. Use the exact published
+platform package name; ClearHash resolves that release's `dist.tarball` and rejects
+incompatible `os`, `cpu`, or `libc` constraints in metadata and in the pinned source.
+It does not automatically follow a wrapper package's optional dependencies.
+
+The selected source package must contain `binding.gyp` or an explicit `build` script.
+ClearHash invokes bundled `node-gyp` against local Node headers and runs the build
+script with errors propagated, then packs with lifecycle hooks disabled. Dependency
+installs retain `--ignore-scripts`. Projects that require custom compiler toolchains,
+install hooks, or generated platform packages absent from the source need a dedicated
+adapter. Native bytes and executable bits remain part of the comparison; compiler,
+Node ABI, or libc differences produce mismatches. JSON results include `platform`.
+Attestation verification remains mandatory. macOS-only packages such as `fsevents`,
+Windows builds, and musl targets require other runners and are rejected by this Linux
+Docker implementation. Omitting `--platform` keeps the existing JavaScript rebuild.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -190,7 +212,7 @@ The source is never inferred from registry metadata. JSON verify results include
 
 | Ecosystem | Status | Attestation source | Rebuild image |
 | --------- | ------------------- | ---------------------------------------------- | ----------------------------- |
-| **npm**   | ✅ end-to-end | `registry.npmjs.org/-/npm/v1/attestations/...` | `node:20.11.1-bookworm-slim` |
+| **npm**   | ✅ JavaScript + Linux/glibc native targets | `registry.npmjs.org/-/npm/v1/attestations/...` | `node:20.11.1-bookworm-slim` (JS), `node:24.11.0-bookworm` (native) |
 | **PyPI**  | 🚧 adapter scaffold | PEP 740 `/integrity/.../provenance` | `python:3.12.2-slim-bookworm` |
 | **Cargo** | ✅ end-to-end with manual pin | none (`--allow-unattested --source --commit` required) | `rust:1.88.0-slim-bookworm` |
 
