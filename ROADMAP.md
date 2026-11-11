@@ -52,7 +52,7 @@ content-hash within a 0-day window.
 
 ## v2 — install-time integration
 
-- [ ] **`clearhash-npm`PATH shim.** A wrapper binary that intercepts`npm install`, runs
+- [x] **`clearhash-npm`PATH shim.** A wrapper binary that intercepts`npm install`, runs
 
   `clearhash verify` on each resolved package, and only proceeds if all match. Optional
   per-org policy: block / warn / log.

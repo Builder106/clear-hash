@@ -233,6 +233,77 @@ backend environment. Missing or incompatible wheels fail offline. See the
 [pinned test lock](crates/clearhash-sandbox/tests/fixtures/pylock.toml) for an example.
 Cargo packaging retains its existing network policy.
 
+### Gate npm installs with `clearhash-npm`
+
+`cargo install --path crates/clearhash-cli` installs both `clearhash` and
+`clearhash-npm`. With npm 11+ and Docker available, run from a project root:
+
+```bash
+clearhash-npm install
+clearhash-npm install @scope/package@^1.0.0 --save-dev
+clearhash-npm ci
+
+# Optional Unix PATH shim: capture the real npm before adding the shim directory.
+export CLEARHASH_REAL_NPM="$(command -v npm)"
+mkdir -p "$HOME/.local/share/clearhash-shim"
+ln -s "$(command -v clearhash-npm)" "$HOME/.local/share/clearhash-shim/npm"
+export PATH="$HOME/.local/share/clearhash-shim:$PATH"
+npm install
+```
+
+Install aliases (`i`, `add`, etc.) and `ci` aliases pass through the verification
+gate. Compound install-and-test commands are rejected; invoke installation and
+testing separately. Other commands pass through to npm. Put install options after the command;
+`clearhash-npm --help` lists supported options. `CLEARHASH_REAL_NPM` can select an
+absolute npm executable; otherwise the shim searches PATH, skipping itself.
+The verifier defaults to the sibling `clearhash` binary; an absolute
+`CLEARHASH_VERIFY_BIN` overrides it.
+
+For `install`, the shim copies `package.json`, the lockfiles, and `.npmrc` to a
+temporary directory and resolves with `--package-lock-only --ignore-scripts`.
+For `ci`, it reads the existing lock without resolving. It checks every unique
+name/version/integrity entry, including transitive, development, peer and optional
+dependencies, using `clearhash verify --expected-integrity <SRI>`. Alias entries
+use the actual package name. The verifier checks the downloaded tarball against
+the locked SHA-256/384/512 integrity before rebuilding. All entries must match
+under the default policy, including optional packages for other platforms.
+
+After verification, the shim checks that the original inputs are unchanged,
+publishes the resolved manifest/lock for `install`, and runs `npm ci` against that
+lock with lifecycle scripts disabled. This replaces existing `node_modules`.
+Resolution or verification rejection leaves project inputs and `node_modules`
+untouched; an error during the final npm install can leave npm's normal partial
+installation state. npm itself enforces the verified lock's integrity on downloaded
+bytes. The lockfile contract follows npm's documented
+[`ci` behavior](https://docs.npmjs.com/cli/v11/commands/npm-ci/).
+
+The initial shim supports registry-only projects with v2/v3 npm locks; shrinkwrap
+takes precedence. Workspaces, local/Git dependencies, bundled dependencies,
+package patches/extensions, global installs, and options that redirect or bypass
+the lock are rejected. The existing public npm verifier determines which packages
+can match; private-only releases and packages without provenance block by default.
+Packages requiring lifecycle scripts or custom native rebuild options need a
+separate supported workflow. The shim controls install/ci commands; other npm
+commands and direct invocations of the real npm remain outside its gate.
+
+Organizations can explicitly permit verification failures with a JSON policy:
+
+```json
+{"default":"block","scopes":{"@legacy-org":"warn","@audit-only":"log"}}
+```
+
+Set `CLEARHASH_NPM_POLICY_FILE` to this file's path. Scope rules use the actual
+package's scope, including aliases. `block` rejects any nonzero verifier result;
+`warn` permits it with a warning; `log` permits it with an audit record. Every
+verification emits a JSON record on stderr with the package, policy, match status,
+and verifier exit code. Structural lock errors and invalid configuration always
+fail closed. Policies should be managed by the organization; this local wrapper
+is not a tamper-resistant policy enforcement service.
+
+Shim exit codes are 0 for a successful npm command, 1 for a policy block, and 3
+for wrapper/configuration failures. Resolution and install failures preserve npm's
+exit status. `warn` and `log` deliberately allow nonmatching packages to install.
+
 ## Exit codes
 
 | Code | Meaning |

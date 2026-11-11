@@ -1,5 +1,6 @@
 //! `clearhash` CLI entry point. Drives the verify pipeline end-to-end.
 
+use std::path::Path;
 use std::process::ExitCode;
 use std::str::FromStr;
 
@@ -8,6 +9,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use clearhash_core::{hex_digest, Ecosystem, PackageRef};
 use clearhash_ecosystems::for_ecosystem;
 use clearhash_ecosystems::npm::{NpmAdapter, NpmPlatform};
+use clearhash_ecosystems::offline::Integrity;
 use clearhash_ecosystems::EcosystemAdapter;
 use clearhash_sandbox::simulate_tamper::TamperMode;
 use clearhash_sandbox::RebuildSource;
@@ -53,6 +55,10 @@ enum Cmd {
         /// Native npm rebuild target: linux/amd64 or linux/arm64 (glibc).
         #[arg(long, value_name = "OS/ARCH")]
         platform: Option<NpmPlatform>,
+
+        /// Require the downloaded artifact to match this SHA-256/384/512 SRI hash.
+        #[arg(long, value_name = "SRI")]
+        expected_integrity: Option<String>,
 
         /// Keep the working directory (sandbox source tree, extracted archives) after exit.
         #[arg(long)]
@@ -127,6 +133,7 @@ async fn main() -> ExitCode {
             source,
             commit,
             platform,
+            expected_integrity,
             keep_workdir,
             json,
             simulate_tamper,
@@ -135,12 +142,18 @@ async fn main() -> ExitCode {
                 let manual_source = manual_source(&package, source, commit)?;
                 run_verify(
                     &package,
-                    allow_unattested,
-                    manual_source,
-                    keep_workdir,
-                    json,
-                    simulate_tamper.map(TamperMode::from),
-                    platform,
+                    VerifyOptions {
+                        allow_unattested,
+                        manual_source,
+                        keep_workdir,
+                        json,
+                        simulate_tamper: simulate_tamper.map(TamperMode::from),
+                        platform,
+                        expected_integrity: expected_integrity
+                            .as_deref()
+                            .map(Integrity::parse)
+                            .transpose()?,
+                    },
                 )
                 .await
             }
@@ -284,15 +297,33 @@ fn verification_adapter(
     }
 }
 
-async fn run_verify(
-    package: &str,
+struct VerifyOptions {
     allow_unattested: bool,
     manual_source: Option<RebuildSource>,
     keep_workdir: bool,
     json: bool,
     simulate_tamper: Option<TamperMode>,
     platform: Option<NpmPlatform>,
-) -> Result<i32> {
+    expected_integrity: Option<Integrity>,
+}
+
+async fn artifact_matches_integrity(path: &Path, expected: Option<&Integrity>) -> Result<bool> {
+    match expected {
+        Some(integrity) => Ok(integrity.matches(&tokio::fs::read(path).await?)),
+        None => Ok(true),
+    }
+}
+
+async fn run_verify(package: &str, options: VerifyOptions) -> Result<i32> {
+    let VerifyOptions {
+        allow_unattested,
+        manual_source,
+        keep_workdir,
+        json,
+        simulate_tamper,
+        platform,
+        expected_integrity,
+    } = options;
     let pkg = PackageRef::from_str(package).context("parsing package reference")?;
     let adapter = verification_adapter(&pkg, platform)?;
     let term = Term::stderr();
@@ -317,6 +348,10 @@ async fn run_verify(
     let fetched = clearhash_registry::fetch(&*adapter, &pkg)
         .await
         .context("fetching artifact")?;
+    if !artifact_matches_integrity(&fetched.archive_path, expected_integrity.as_ref()).await? {
+        eprintln!("error: downloaded artifact does not match --expected-integrity for {pkg}");
+        return Ok(1);
+    }
     let _ = term.write_line(&format!(
         "      sha256: {}",
         hex_digest(&fetched.registry_sha256)
@@ -503,6 +538,28 @@ fn print_outcome(
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn locked_integrity_checks_downloaded_bytes_and_fails_on_missing_artifacts() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("artifact.tgz");
+        let expected =
+            Integrity::parse("sha256-ungWv48Bz+pBQUDeXa4iI7ADYaOWF3qctBD/YfIAFa0=").unwrap();
+        assert!(artifact_matches_integrity(&path, Some(&expected))
+            .await
+            .is_err());
+        tokio::fs::write(&path, b"abc").await.unwrap();
+        assert!(artifact_matches_integrity(&path, Some(&expected))
+            .await
+            .unwrap());
+        tokio::fs::write(&path, b"different registry bytes")
+            .await
+            .unwrap();
+        assert!(!artifact_matches_integrity(&path, Some(&expected))
+            .await
+            .unwrap());
+        assert!(artifact_matches_integrity(&path, None).await.unwrap());
+    }
+
     fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
         Cli::try_parse_from(args)
     }
@@ -521,6 +578,7 @@ mod tests {
                 source,
                 commit,
                 platform,
+                expected_integrity,
             } => {
                 assert_eq!(package, "npm:left-pad@1.0.0");
                 assert!(!allow_unattested);
@@ -529,6 +587,7 @@ mod tests {
                 assert!(simulate_tamper.is_none());
                 assert!(source.is_none() && commit.is_none());
                 assert!(platform.is_none());
+                assert!(expected_integrity.is_none());
             }
             _ => panic!("expected Verify"),
         }

@@ -634,6 +634,7 @@ name = "clearhash-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "clap",
  "clearhash-core",
  "clearhash-ecosystems",
@@ -641,13 +642,19 @@ dependencies = [
  "clearhash-registry",
  "clearhash-sandbox",
  "console",
+ "flate2",
  "hex",
  "indicatif",
+ "semver",
+ "serde",
  "serde_json",
+ "sha2",
+ "tar",
  "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

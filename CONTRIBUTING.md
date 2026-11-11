@@ -80,8 +80,8 @@ To keep the surface honest, ClearHash explicitly *does not* try to:
 
   dependency tree. ClearHash checks artifact provenance.
 
-- Wrap `npm install` itself. v1 is a verifier you run before/in-CI alongside install.
-
-  PATH-shim integration is on the v1.2 roadmap.
-
 If a PR's purpose is one of the above, please open an issue first to discuss.
+
+The v2 `clearhash-npm` PATH shim gates registry-only `npm install`/`ci` commands.
+It retains `--ignore-scripts` during both resolution and installation; unsupported
+sources and options must fail closed. See README.md for its supported scope.
