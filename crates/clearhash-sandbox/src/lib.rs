@@ -411,11 +411,24 @@ fn pick_artifact(dest: &Path) -> Result<PathBuf, SandboxError> {
     }
 }
 
-/// Convenience: wait briefly so docker daemon socket connection is reliable in tests.
+/// Convenience: wait briefly so docker daemon socket connection is reliable in tests
+/// and verify that the daemon supports Linux containers. On Windows runners, Docker
+/// may run Windows containers where Linux-based rebuild images have no matching manifest.
 pub async fn docker_reachable() -> bool {
     tokio::time::timeout(Duration::from_secs(3), async {
         match Docker::connect_with_local_defaults() {
-            Ok(d) => d.ping().await.is_ok(),
+            Ok(d) => {
+                if d.ping().await.is_err() {
+                    return false;
+                }
+                match d.info().await {
+                    Ok(info) => {
+                        let os_type = info.os_type.as_deref().unwrap_or_default();
+                        os_type.eq_ignore_ascii_case("linux")
+                    }
+                    Err(_) => false,
+                }
+            }
             Err(_) => false,
         }
     })
