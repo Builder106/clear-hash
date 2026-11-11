@@ -244,9 +244,22 @@ mkdir -p /out
 cd /src
 export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct {COMMIT_SHA} 2>/dev/null || echo 0)"
 export TZ=UTC
-pip install --quiet build
-python -m build --sdist --outdir /out
+export PIP_CONFIG_FILE=/dev/null
+export PIP_NO_INDEX=1
+export PIP_FIND_LINKS=/deps
+export PIP_ONLY_BINARY=:all:
+export PIP_DISABLE_PIP_VERSION_CHECK=1
+python -m venv /tmp/clearhash-python
+/tmp/clearhash-python/bin/python -m pip install --quiet build
+/tmp/clearhash-python/bin/python -m build --sdist --outdir /out
 "#
+    }
+
+    fn offline_dependencies(
+        &self,
+        source: &std::path::Path,
+    ) -> Result<Option<Vec<crate::offline::Dependency>>, AdapterError> {
+        crate::offline::pypi(source).map(Some)
     }
 
     fn built_artifact_dir(&self) -> &'static str {

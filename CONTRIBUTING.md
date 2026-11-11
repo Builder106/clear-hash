@@ -17,14 +17,16 @@ You'll need:
 - A running Docker daemon (Docker Desktop, OrbStack, or `colima` on macOS; native on Linux)
 - ~2 GB free disk for rebuild image layers
 
-## Run the live demo
+## Inspect a live package
 
 ```bash
-cargo run --bin clearhash -- verify npm:sigstore@2.3.1
+cargo run --bin clearhash -- inspect npm:sigstore@2.3.1
 ```
 
-The first run pulls `node:20.11.1-bookworm-slim` (~150 MB) and clones the sigstore-js
-repo. Subsequent runs are cached.
+The historical `sigstore@2.3.1` source lock omits dependency integrity hashes, so
+`verify` rejects it with exit code 3 under the offline rebuild policy. Successful
+npm/PyPI rebuild fixtures run in `cargo test -p clearhash-sandbox` with Docker.
+JavaScript rebuilds use the pinned `node:24.11.0-bookworm-slim` image.
 
 ## Project-specific guardrails
 

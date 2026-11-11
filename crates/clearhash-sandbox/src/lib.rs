@@ -9,17 +9,15 @@
 //!      rebuild script with `SOURCE_DATE_EPOCH` set to the commit's author time.
 //!   4. `download_from_container /out` to extract the rebuilt artifact back to the host.
 //!
-//! Network model: the rebuild container has default network (bridge). It needs network to run
-//! `npm ci` / `pip install` / `cargo download`, which fetch lockfile-pinned dependencies. The
-//! lockfile is part of the attested source tree, so the dependency closure is deterministic
-//! by content even though the registry is queried. `--ignore-scripts` blocks the highest-impact
-//! exfiltration path (lifecycle hooks). Fully air-gapped builds via pre-fetched offline caches
-//! are a v1.1 hardening (see ROADMAP.md).
+//! npm and PyPI dependencies are fetched and hash-verified on the host before any
+//! package code executes. Their rebuilds mount the verified archives read-only at
+//! `/deps` and use Docker network mode `none`. Cargo retains its packaging network policy.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
+mod offline;
 pub mod simulate_tamper;
 
 use bollard::models::{ContainerCreateBody, HostConfig};
@@ -43,6 +41,8 @@ pub enum SandboxError {
     Adapter(#[from] AdapterError),
     #[error("docker: {0}")]
     Docker(#[from] bollard::errors::Error),
+    #[error("dependency prefetch: {0}")]
+    Prefetch(String),
     #[error("git: {0}")]
     Git(String),
     #[error("rebuild script exited with status {0}; stderr tail: {1}")]
@@ -76,7 +76,16 @@ pub fn extract_archive(
             if primary.exists() {
                 primary
             } else {
-                let alt = extract_into.join(prefix.replace('-', "_"));
+                // Python normalizes distribution names to underscores, but the
+                // separator before the version remains a hyphen.
+                let alt = extract_into.join(
+                    prefix
+                        .strip_suffix(&format!("-{}", pkg.version))
+                        .map_or_else(
+                            || prefix.clone(),
+                            |name| format!("{}-{}", name.replace('-', "_"), pkg.version),
+                        ),
+                );
                 if alt.exists() {
                     alt
                 } else {
@@ -159,10 +168,20 @@ pub async fn rebuild(
 
     clone_and_pin(&source.source_repo, &source.commit_sha, &source_dir).await?;
 
+    let dependencies = offline::prepare(adapter, &source_dir, workdir).await?;
+
     let docker = Docker::connect_with_local_defaults()?;
     pull_image(&docker, adapter.rebuild_image(), adapter.rebuild_platform()).await?;
 
-    let container_id = create_and_run(&docker, adapter, source, pkg, &source_dir).await?;
+    let container_id = create_and_run(
+        &docker,
+        adapter,
+        source,
+        pkg,
+        &source_dir,
+        dependencies.as_deref(),
+    )
+    .await?;
     let logs_tail = wait_and_collect_logs(&docker, &container_id).await?;
     let exit_code = container_exit_code(&docker, &container_id).await?;
     if exit_code != 0 {
@@ -281,6 +300,7 @@ async fn create_and_run(
     source: &RebuildSource,
     pkg: &PackageRef,
     source_dir: &Path,
+    dependencies: Option<&Path>,
 ) -> Result<String, SandboxError> {
     let script = adapter
         .rebuild_script()
@@ -290,7 +310,13 @@ async fn create_and_run(
         .replace("{PKG_VERSION}", &pkg.version);
 
     let source_abs = std::fs::canonicalize(source_dir)?;
-    let bind = format!("{}:/src", source_abs.display());
+    let mut binds = vec![format!("{}:/src", source_abs.display())];
+    if let Some(dependencies) = dependencies {
+        binds.push(format!(
+            "{}:/deps:ro",
+            std::fs::canonicalize(dependencies)?.display()
+        ));
+    }
 
     let config: ContainerCreateBody = ContainerCreateBody {
         image: Some(adapter.rebuild_image().to_string()),
@@ -301,7 +327,8 @@ async fn create_and_run(
             format!("PKG_VERSION={}", pkg.version),
         ]),
         host_config: Some(HostConfig {
-            binds: Some(vec![bind]),
+            binds: Some(binds),
+            network_mode: dependencies.map(|_| "none".to_string()),
             auto_remove: Some(false),
             ..Default::default()
         }),
@@ -684,6 +711,14 @@ NAPI_MODULE(NODE_GYP_MODULE_NAME, init)
 "#,
         )
         .unwrap();
+        std::fs::write(
+            repo.path().join("package-lock.json"),
+            serde_json::json!({"name":"fixture-root", "lockfileVersion":3, "requires":true, "packages": {
+                "": {"name":"fixture-root", "workspaces":["native"]},
+                "native": {"name":"@clearhash/addon-linux", "version":"1.0.0"},
+                "node_modules/@clearhash/addon-linux": {"resolved":"native", "link":true}
+            }}).to_string(),
+        ).unwrap();
         let source = RebuildSource {
             source_repo: repo.path().to_string_lossy().into(),
             commit_sha: commit_fixture(repo.path()),
@@ -750,6 +785,190 @@ NAPI_MODULE(NODE_GYP_MODULE_NAME, init)
             matches!(rebuild(&adapter, &source, &pkg, failed_dir.path()).await,
             Err(SandboxError::RebuildFailed(_, log)) if log.contains("source os does not support linux"))
         );
+    }
+
+    #[tokio::test]
+    async fn npm_offline_install_uses_verified_tarballs_without_network() {
+        use clearhash_ecosystems::offline::Integrity;
+        if !docker_reachable().await {
+            eprintln!("skipping offline npm rebuild: Docker daemon unreachable");
+            return;
+        }
+        let docker = Docker::connect_with_local_defaults().unwrap();
+        let adapter = for_ecosystem(clearhash_core::Ecosystem::Npm);
+        pull_image(&docker, adapter.rebuild_image(), None)
+            .await
+            .unwrap();
+        for algorithm in ["sha512", "sha384", "sha256"] {
+            let source = tempfile::tempdir().unwrap();
+            let dependencies = tempfile::tempdir().unwrap();
+            let tarball = make_npm_tarball(dependencies.path(), "0.tgz", "module.exports = 42;");
+            // Compute SRI with the pinned image's Node crypto, independently of Rust verification.
+            let output = std::process::Command::new("docker").args([
+                "run", "--rm", "--network=none", "-v",
+                &format!("{}:/deps:ro", dependencies.path().display()),
+                adapter.rebuild_image(), "node", "-e",
+                &format!("console.log('{algorithm}-' + require('crypto').createHash('{algorithm}').update(require('fs').readFileSync('/deps/0.tgz')).digest('base64'))")
+            ]).output().unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let sri = String::from_utf8(output.stdout).unwrap().trim().to_string();
+            assert!(Integrity::parse(&sri)
+                .unwrap()
+                .matches(&std::fs::read(tarball).unwrap()));
+            let build = r#"node -e "if(require('x') !== 42 || Object.values(require('os').networkInterfaces()).flat().some(i => !i.internal)) process.exit(1); console.log('offline-build-ok')""#;
+            std::fs::write(source.path().join("package.json"), serde_json::json!({
+                "name":"offline-fixture", "version":"1.0.0", "dependencies":{"x":"1.0.0"},
+                "scripts":{"build":build,"preinstall":"exit 81","prepare":"exit 82","prepack":"exit 83"}
+            }).to_string()).unwrap();
+            std::fs::write(source.path().join("package-lock.json"), serde_json::json!({
+                "name":"offline-fixture", "version":"1.0.0", "lockfileVersion":3, "requires":true,
+                "packages": {
+                    "":{"name":"offline-fixture","version":"1.0.0","dependencies":{"x":"1.0.0"}},
+                    "node_modules/x":{"version":"1.0.0","resolved":"https://registry.invalid/x.tgz","integrity":sri}
+                }
+            }).to_string()).unwrap();
+            if algorithm == "sha512" {
+                let path = source.path().join("package-lock.json");
+                let mut lock: serde_json::Value =
+                    serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+                lock["packages"]["node_modules/x"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("resolved");
+                std::fs::write(path, lock.to_string()).unwrap();
+            }
+            let locked = adapter
+                .offline_dependencies(source.path())
+                .unwrap()
+                .unwrap();
+            assert_eq!(locked.len(), 1);
+            assert_eq!(locked[0].filename, "0.tgz");
+            let committed_lock = std::fs::read(source.path().join("package-lock.json")).unwrap();
+            let pin = RebuildSource {
+                source_repo: "unused".into(),
+                commit_sha: "0123456789abcdef0123456789abcdef01234567".into(),
+            };
+            let pkg = "npm:offline-fixture@1.0.0".parse().unwrap();
+            let id = create_and_run(
+                &docker,
+                &*adapter,
+                &pin,
+                &pkg,
+                source.path(),
+                Some(dependencies.path()),
+            )
+            .await
+            .unwrap();
+            let logs = wait_and_collect_logs(&docker, &id).await.unwrap();
+            let exit = container_exit_code(&docker, &id).await.unwrap();
+            let config = docker.inspect_container(&id, None).await.unwrap();
+            let out = tempfile::tempdir().unwrap();
+            download_artifacts(&docker, &id, "/out", out.path())
+                .await
+                .unwrap();
+            docker.remove_container(&id, None).await.unwrap();
+            assert_eq!(exit, 0, "{logs}");
+            assert!(logs.contains("offline-build-ok"), "{logs}");
+            assert_eq!(
+                std::fs::read(source.path().join("package-lock.json")).unwrap(),
+                committed_lock
+            );
+            assert_eq!(
+                config.host_config.unwrap().network_mode.as_deref(),
+                Some("none")
+            );
+            assert!(pick_artifact(out.path()).is_ok());
+
+            // An empty verified cache must fail rather than contact the URL in the lockfile.
+            std::fs::remove_file(dependencies.path().join("0.tgz")).unwrap();
+            let id = create_and_run(
+                &docker,
+                &*adapter,
+                &pin,
+                &pkg,
+                source.path(),
+                Some(dependencies.path()),
+            )
+            .await
+            .unwrap();
+            let logs = wait_and_collect_logs(&docker, &id).await.unwrap();
+            let exit = container_exit_code(&docker, &id).await.unwrap();
+            docker.remove_container(&id, None).await.unwrap();
+            assert_ne!(
+                exit, 0,
+                "missing offline dependency unexpectedly installed: {logs}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn pypi_offline_build_uses_locked_wheels_and_fails_on_missing_backend() {
+        if !docker_reachable().await {
+            eprintln!("skipping offline PyPI rebuild: Docker daemon unreachable");
+            return;
+        }
+        let repo = tempfile::tempdir().unwrap();
+        git(repo.path(), &["init", "--quiet"]);
+        std::fs::write(
+            repo.path().join("pylock.toml"),
+            include_str!("../tests/fixtures/pylock.toml"),
+        )
+        .unwrap();
+        std::fs::write(
+            repo.path().join("pyproject.toml"),
+            r#"
+[build-system]
+requires = ["setuptools==75.8.0"]
+build-backend = "backend"
+backend-path = ["."]
+[project]
+name = "offline-fixture"
+version = "1.0.0"
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            repo.path().join("backend.py"),
+            r#"
+import socket
+from setuptools.build_meta import *
+# Both the build-requirements probe and the sdist builder execute without a network.
+try:
+    socket.create_connection(("1.1.1.1", 443), timeout=1)
+except OSError:
+    pass
+else:
+    raise RuntimeError("build backend unexpectedly has network access")
+"#,
+        )
+        .unwrap();
+        let pin = RebuildSource {
+            source_repo: repo.path().to_string_lossy().into(),
+            commit_sha: commit_fixture(repo.path()),
+        };
+        let adapter = for_ecosystem(clearhash_core::Ecosystem::Pypi);
+        let pkg = "pypi:offline-fixture@1.0.0".parse().unwrap();
+        let work = tempfile::tempdir().unwrap();
+        let rebuilt = rebuild(&*adapter, &pin, &pkg, work.path()).await.unwrap();
+        let tree = extract_archive(&*adapter, &rebuilt.artifact_path, &pkg, work.path()).unwrap();
+        assert!(tree.join("backend.py").exists());
+        // Preserve a valid lockfile but omit the backend wheel from its closure.
+        let lock = include_str!("../tests/fixtures/pylock.toml");
+        let last = lock.rfind("[[packages]]").unwrap();
+        std::fs::write(repo.path().join("pylock.toml"), &lock[..last]).unwrap();
+        let pin = RebuildSource {
+            commit_sha: commit_fixture(repo.path()),
+            ..pin
+        };
+        let work = tempfile::tempdir().unwrap();
+        assert!(matches!(
+            rebuild(&*adapter, &pin, &pkg, work.path()).await,
+            Err(SandboxError::RebuildFailed(..))
+        ));
     }
 
     fn make_npm_tarball(dir: &Path, name: &str, content: &str) -> PathBuf {

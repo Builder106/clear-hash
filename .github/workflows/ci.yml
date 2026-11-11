@@ -128,8 +128,18 @@ jobs:
         # `--bin clearhash` is ambiguous (both clearhash-cli and clearhash-vercel define a
         # binary). `-p clearhash-cli` disambiguates by package.
         run: cargo build --release -p clearhash-cli
-      - name: Verify a known-clean attested package
-        run: ./target/release/clearhash verify npm:sigstore@2.3.1
+      - name: Reject an attested source with unhashed dependencies
+        # This historical demo's source lock omits dependency integrity hashes.
+        # Positive offline npm/PyPI rebuilds run in the workspace Docker tests.
+        shell: bash
+        run: |
+          set +e
+          output=$(./target/release/clearhash verify npm:sigstore@2.3.1 2>&1)
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          test "$status" -eq 3
+          [[ "$output" == *"missing dependency integrity"* ]]
 
   deploy:
     name: Deploy to Vercel

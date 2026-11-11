@@ -205,7 +205,9 @@ impl EcosystemAdapter for NpmAdapter {
             // ship in /usr/local/include/node. No mutable apt install at build time.
             "node:24.11.0-bookworm"
         } else {
-            "node:20.11.1-bookworm-slim"
+            // npm 10 runs prepare during pack even with --ignore-scripts. npm 11
+            // in this exact Node release honors the lifecycle-hook restriction.
+            "node:24.11.0-bookworm-slim"
         }
     }
 
@@ -224,6 +226,13 @@ impl EcosystemAdapter for NpmAdapter {
         } else {
             include_str!("npm-rebuild.sh")
         }
+    }
+
+    fn offline_dependencies(
+        &self,
+        source: &std::path::Path,
+    ) -> Result<Option<Vec<crate::offline::Dependency>>, AdapterError> {
+        crate::offline::npm(source).map(Some)
     }
 
     fn built_artifact_dir(&self) -> &'static str {
@@ -538,7 +547,7 @@ mod tests {
         let js = NpmAdapter::default();
         assert_eq!(js.rebuild_platform(), None);
         assert_eq!(js.release_metadata_url(&pkg), None);
-        assert_eq!(js.rebuild_image(), "node:20.11.1-bookworm-slim");
+        assert_eq!(js.rebuild_image(), "node:24.11.0-bookworm-slim");
     }
 
     #[test]

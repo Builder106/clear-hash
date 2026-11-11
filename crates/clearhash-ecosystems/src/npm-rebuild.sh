@@ -4,6 +4,9 @@ cd /src
 export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct {COMMIT_SHA} 2>/dev/null || echo 0)"
 export TZ=UTC
 export npm_config_update_notifier=false
+export npm_config_offline=true
+export npm_config_ignore_scripts=true
+export npm_config_cache=/tmp/clearhash-npm-cache
 export PKG_NAME='{PKG_NAME}'
 export PKG_VERSION='{PKG_VERSION}'
 
@@ -54,18 +57,42 @@ for (const [field, target] of Object.entries(targets)) {
 }
 NODE
 
-# Workspace install at the repo root (handles npm/yarn/pnpm workspaces).
-if [ -f package-lock.json ]; then
-  npm ci --ignore-scripts --no-audit --no-fund
-elif [ -f yarn.lock ]; then
-  corepack enable >/dev/null 2>&1 || true
-  yarn install --frozen-lockfile --ignore-scripts >/dev/null
-elif [ -f pnpm-lock.yaml ]; then
-  corepack enable >/dev/null 2>&1 || true
-  pnpm install --frozen-lockfile --ignore-scripts >/dev/null
-else
-  npm install --ignore-scripts --no-audit --no-fund
-fi
+# Populate npm's content-addressed cache from host-verified tarballs, inside the
+# network-disabled container. No host npm installation or dependency code execution.
+restore_lock() {
+  if [ -f /tmp/clearhash-original-lock ]; then
+    node -e 'const fs=require("fs"); fs.copyFileSync("/tmp/clearhash-original-lock", fs.existsSync("npm-shrinkwrap.json") ? "npm-shrinkwrap.json" : "package-lock.json"); fs.unlinkSync("/tmp/clearhash-original-lock")'
+  fi
+}
+trap restore_lock EXIT
+node <<'NODE'
+const fs = require("fs");
+const cacache = require("/usr/local/lib/node_modules/npm/node_modules/cacache");
+const lockPath = fs.existsSync("npm-shrinkwrap.json") ? "npm-shrinkwrap.json" : "package-lock.json";
+const original = fs.readFileSync(lockPath);
+const lock = JSON.parse(original);
+for (const [location, entry] of Object.entries(lock.packages)) {
+  if (!location.split("/").includes("node_modules") || entry.link || entry.inBundle || entry.resolved != null) continue;
+  const name = entry.name || location.split("node_modules/").pop();
+  entry.resolved = `https://registry.npmjs.org/${name}/-/${name.split("/").pop()}-${entry.version}.tgz`;
+}
+// npm otherwise requests packuments for URL-less locks even with cached integrity.
+// Restore the exact committed bytes before any source build/pack code runs.
+fs.writeFileSync("/tmp/clearhash-original-lock", original);
+fs.writeFileSync(lockPath, JSON.stringify(lock));
+(async () => {
+  for (const name of fs.readdirSync("/deps").filter(n => n.endsWith(".tgz"))) {
+    const bytes = fs.readFileSync(`/deps/${name}`);
+    // npm normally writes SHA-512; seed other supported lockfile SRI algorithms too.
+    for (const algorithm of ["sha256", "sha384", "sha512"]) {
+      await cacache.put(`${process.env.npm_config_cache}/_cacache`, `clearhash:${name}:${algorithm}`, bytes, { algorithms: [algorithm] });
+    }
+  }
+})().catch(error => { console.error(error); process.exit(1); });
+NODE
+npm ci --offline --ignore-scripts --no-audit --no-fund --cache=/tmp/clearhash-npm-cache
+restore_lock
+trap - EXIT
 
 cd "$TARGET_DIR"
 if [ "${CLEARHASH_NATIVE_REBUILD:-0}" = 1 ]; then
@@ -82,9 +109,5 @@ if [ "${CLEARHASH_NATIVE_REBUILD:-0}" = 1 ]; then
   npm pack --ignore-scripts --pack-destination=/out
   exit 0
 fi
-# If a `prepack` / `prepare` script exists, run it explicitly (we used --ignore-scripts above).
-# Many monorepos rely on this to generate dist/ before pack.
-if node -e 'const p=require("./package.json"); process.exit(p.scripts && (p.scripts.build || p.scripts.prepack || p.scripts.prepare) ? 0 : 1)' 2>/dev/null; then
-  npm run build --if-present || true
-fi
-npm pack --pack-destination=/out
+npm run build --ignore-scripts --if-present
+npm pack --ignore-scripts --pack-destination=/out

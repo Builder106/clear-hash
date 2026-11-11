@@ -34,6 +34,12 @@ the tarball is what the source code would produce*.
 
 ClearHash actually does the rebuild and the comparison.
 
+These historical transcripts show the earlier online rebuild. The pinned source
+for `sigstore@2.3.1` omits dependency integrity hashes, so current offline verification
+rejects it with exit code 3 (`missing dependency integrity`). `clearhash inspect`
+still displays its provenance. CI checks that refusal and tests successful offline
+npm/PyPI rebuilds with committed, fully hashed dependency fixtures.
+
 ```text
 $ clearhash verify npm:sigstore@2.3.1
 [1/5] Fetching sigstore from npm
@@ -197,6 +203,36 @@ Attestation verification remains mandatory. macOS-only packages such as `fsevent
 Windows builds, and musl targets require other runners and are rejected by this Linux
 Docker implementation. Omitting `--platform` keeps the existing JavaScript rebuild.
 
+npm and PyPI rebuilds install dependencies from host-verified offline caches. After
+checking out the pinned source, ClearHash downloads the locked archives over HTTPS,
+checks their committed integrity hashes, and mounts them read-only at `/deps`. The
+rebuild container uses Docker network mode `none`; a missing dependency fails the
+build instead of falling back to the registry. Downloads and image pulls still need
+host network access. Each dependency archive is limited to 256 MiB.
+
+For npm, commit a root `package-lock.json` or `npm-shrinkwrap.json` with
+`lockfileVersion` 2 or 3 and SHA-256, SHA-384, or SHA-512 SRI hashes for every
+external dependency, including development and optional packages. Explicit tarball
+URLs must use HTTPS. If a registry URL is omitted, an exact locked name/version
+supplies the standard npm registry tarball URL without querying release metadata. Shrinkwrap takes precedence. Workspace links must stay inside the pinned
+source; bundled dependencies arrive in their parent tarball. ClearHash seeds the
+pinned image's npm cache and runs `npm ci --offline --ignore-scripts`, explicitly
+runs an optional build script, and packs with lifecycle hooks disabled. Yarn/pnpm
+locks, Git dependencies, external local paths, SHA-1-only hashes, and unlocked
+installs are unsupported and fail before rebuilding.
+
+For PyPI sdists, commit a root `pylock.toml` (lock version `1.0`) containing the full
+build-tool closure: `build`, its dependencies, the PEP 517 backend, and any dynamic
+build requirements. Each package needs wheels with HTTPS `url` and `hashes.sha256`;
+the wheel filename comes from `name` or the URL. The supported subset is a wheel
+cache, not a general pylock environment resolver: all listed wheels are fetched,
+and pip selects compatible wheels in the pinned Python image. Source, VCS, local,
+and index-only dependency entries are unsupported. Installation uses a fresh venv
+and `PIP_NO_INDEX=1`, `PIP_FIND_LINKS=/deps`, and wheels only, including the isolated
+backend environment. Missing or incompatible wheels fail offline. See the
+[pinned test lock](crates/clearhash-sandbox/tests/fixtures/pylock.toml) for an example.
+Cargo packaging retains its existing network policy.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -212,8 +248,8 @@ Docker implementation. Omitting `--platform` keeps the existing JavaScript rebui
 
 | Ecosystem | Status | Attestation source | Rebuild image |
 | --------- | ------------------- | ---------------------------------------------- | ----------------------------- |
-| **npm**   | ✅ JavaScript + Linux/glibc native targets | `registry.npmjs.org/-/npm/v1/attestations/...` | `node:20.11.1-bookworm-slim` (JS), `node:24.11.0-bookworm` (native) |
-| **PyPI**  | 🚧 adapter scaffold | PEP 740 `/integrity/.../provenance` | `python:3.12.2-slim-bookworm` |
+| **npm**   | ✅ JavaScript + Linux/glibc native targets | `registry.npmjs.org/-/npm/v1/attestations/...` | `node:24.11.0-bookworm-slim` (JS), `node:24.11.0-bookworm` (native) |
+| **PyPI**  | ✅ sdists with locked build wheels | PEP 740 `/integrity/.../provenance` | `python:3.12.2-slim-bookworm` |
 | **Cargo** | ✅ end-to-end with manual pin | none (`--allow-unattested --source --commit` required) | `rust:1.88.0-slim-bookworm` |
 
 The Cargo path rebuilds a manually pinned Git source through the same adapter and
@@ -234,12 +270,11 @@ comparison pipeline used for attested packages.
 - SCT (Signed Certificate Timestamp) verification confirming Fulcio precertificate submission to Certificate Transparency logs
 - Full Rekor v1 Merkle inclusion-proof verification against a signed checkpoint, with the logged payload, signature, and certificate bound to the attestation
 - Source repo `git clone`+ commit pinning with`HEAD == attested-commit` verification
-- Network-isolated rebuild container (default bridge; build needs network for `npm ci`)
+- Network-disabled npm/PyPI rebuilds with host-fetched, hash-verified dependency caches
 - File-tree Merkle compare with per-file diff output
 
 **v1.1 (next):**
 
-- Air-gapped rebuilds via pre-fetched offline dep caches
 - Wheel verification for PyPI (currently only sdists)
 
 Rekor and SCT verification run offline using pinned production public keys from
@@ -325,10 +360,12 @@ the workflow that signed the attestation." Caveats:
    the tampered tree. This is correct: the attestation says "this is what the source
    produces" — the rebuild verifies that claim, not "the source is benign."
 
-2. **The rebuild container has network access** for dependency installs (`npm ci`,
+2. **Offline rebuilds require complete dependency locks.** npm/PyPI containers have
 
-   `pip install`, `cargo download`). `--ignore-scripts` blocks the highest-impact
-   exfiltration path (lifecycle hooks). Fully air-gapped builds are v1.1.
+   no network; missing or unhashed dependencies fail closed. Published dependency
+   hashes committed in the pinned source are the trust root for host downloads.
+   Cargo packaging still has network access. Offline caches do not make malicious
+   source safe or replace container isolation.
 
 3. **Determinism failures look identical to tampering.** If `npm pack` is genuinely
 

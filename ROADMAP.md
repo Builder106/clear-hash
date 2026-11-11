@@ -43,7 +43,7 @@ is part of the attested source, so the dependency closure is content-determinist
 an attacker who controls the registry could still serve different bytes for the same
 content-hash within a 0-day window.
 
-- [ ] **Pre-fetched offline dependency caches.** Walk the lockfile, fetch each dep's tarball
+- [x] **Pre-fetched offline dependency caches.** Walk the lockfile, fetch each dep's tarball
 
   on the host (verifying registry-published integrity hashes), copy into the container,
   then run `npm ci --offline` (or pip's wheel cache equivalent) with no network.

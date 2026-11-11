@@ -9,6 +9,7 @@ use url::Url;
 
 pub mod cargo;
 pub mod npm;
+pub mod offline;
 pub mod pypi;
 
 /// What a single ecosystem adapter must provide.
@@ -85,6 +86,16 @@ pub trait EcosystemAdapter: Send + Sync {
 
     /// Pinned Docker image. Never tag-track; always pin a digest in production.
     fn rebuild_image(&self) -> &'static str;
+
+    /// Host-side dependency manifest. `Some` requires a network-disabled rebuild and
+    /// mounts only verified archives at `/deps`; `None` retains the adapter's network policy.
+    fn offline_dependencies(
+        &self,
+        source: &Path,
+    ) -> Result<Option<Vec<offline::Dependency>>, AdapterError> {
+        let _ = source;
+        Ok(None)
+    }
 
     /// Build script injected into the network-isolated container. The sandbox crate
     /// substitutes `{COMMIT_SHA}` and `{REPO_URL}` placeholders before exec, and exposes
