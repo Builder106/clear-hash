@@ -564,30 +564,40 @@ async fn resolve(
 /// Rebuild containers run as root and leave root-owned files in the bind-mounted
 /// source tree. Hand them back to the work directory's owner, then delete the tree.
 async fn release_workdir(image: &str, dir: &Path) {
-    #[cfg(unix)]
-    if let Ok(metadata) = std::fs::metadata(dir) {
-        use std::os::unix::fs::MetadataExt;
-        let options = RebuildOptions {
-            timeout: Some(Duration::from_secs(300)),
-            ..Default::default()
-        };
-        let source_dir = dir.join("source");
-        if source_dir.exists() {
-            let _ = clearhash_sandbox::run_job(ContainerJob {
-                image,
-                platform: None,
-                script: format!("chown -R {}:{} /src", metadata.uid(), metadata.gid()),
-                source_dir: &source_dir,
-                options: &options,
-                collect: None,
-            })
-            .await;
-        }
-    }
+    hand_back_source(image, dir).await;
     if let Err(error) = std::fs::remove_dir_all(dir) {
         tracing::warn!(dir = %dir.display(), "work directory not removed: {error}");
     }
 }
+
+#[cfg(unix)]
+async fn hand_back_source(image: &str, dir: &Path) {
+    use std::os::unix::fs::MetadataExt;
+    let source_dir = dir.join("source");
+    let Ok(metadata) = std::fs::metadata(dir) else {
+        return;
+    };
+    if !source_dir.exists() {
+        return;
+    }
+    let options = RebuildOptions {
+        timeout: Some(Duration::from_secs(300)),
+        ..Default::default()
+    };
+    let _ = clearhash_sandbox::run_job(ContainerJob {
+        image,
+        platform: None,
+        script: format!("chown -R {}:{} /src", metadata.uid(), metadata.gid()),
+        source_dir: &source_dir,
+        options: &options,
+        collect: None,
+    })
+    .await;
+}
+
+/// Docker Desktop on other hosts does not leave root-owned files behind.
+#[cfg(not(unix))]
+async fn hand_back_source(_image: &str, _dir: &Path) {}
 
 #[derive(Serialize)]
 struct Screened<'a> {
