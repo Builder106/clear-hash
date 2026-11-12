@@ -57,6 +57,17 @@ for (const [field, target] of Object.entries(targets)) {
 }
 NODE
 
+if [ "${CLEARHASH_DEPENDENCY_MODE:-offline}" = network ]; then
+# Measurement mode only (clearhash-study): install from the registry. The verifier
+# never sets this variable, and its containers have no network.
+export npm_config_offline=false
+if [ -f npm-shrinkwrap.json ] || [ -f package-lock.json ]; then
+  npm ci --ignore-scripts --no-audit --no-fund --cache=/tmp/clearhash-npm-cache
+else
+  npm install --ignore-scripts --no-audit --no-fund --cache=/tmp/clearhash-npm-cache \
+    ${CLEARHASH_RESOLVE_BEFORE:+"--before=$CLEARHASH_RESOLVE_BEFORE"}
+fi
+else
 # Populate npm's content-addressed cache from host-verified tarballs, inside the
 # network-disabled container. No host npm installation or dependency code execution.
 restore_lock() {
@@ -93,6 +104,7 @@ NODE
 npm ci --offline --ignore-scripts --no-audit --no-fund --cache=/tmp/clearhash-npm-cache
 restore_lock
 trap - EXIT
+fi
 
 cd "$TARGET_DIR"
 if [ "${CLEARHASH_NATIVE_REBUILD:-0}" = 1 ]; then

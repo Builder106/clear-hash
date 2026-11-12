@@ -47,7 +47,7 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt
-      - run: cargo fmt --check -p clearhash-cli -p clearhash-core -p clearhash-ecosystems -p clearhash-provenance -p clearhash-registry -p clearhash-sandbox -p clearhash-web -p clearhash-vercel
+      - run: cargo fmt --check -p clearhash-cli -p clearhash-core -p clearhash-ecosystems -p clearhash-provenance -p clearhash-registry -p clearhash-sandbox -p clearhash-study -p clearhash-web -p clearhash-vercel
 
   clippy:
     name: Clippy

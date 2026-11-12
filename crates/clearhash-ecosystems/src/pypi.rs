@@ -245,11 +245,19 @@ cd /src
 export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct {COMMIT_SHA} 2>/dev/null || echo 0)"
 export TZ=UTC
 export PIP_CONFIG_FILE=/dev/null
-export PIP_NO_INDEX=1
-export PIP_FIND_LINKS=/deps
-export PIP_ONLY_BINARY=:all:
 export PIP_DISABLE_PIP_VERSION_CHECK=1
 python -m venv /tmp/clearhash-python
+if [ "${CLEARHASH_DEPENDENCY_MODE:-offline}" = network ]; then
+  # Measurement mode only (clearhash-study). pip 26.0 added --uploaded-prior-to.
+  /tmp/clearhash-python/bin/python -m pip install --quiet pip==26.2.2
+  if [ -n "${CLEARHASH_RESOLVE_BEFORE:-}" ]; then
+    export PIP_UPLOADED_PRIOR_TO="$CLEARHASH_RESOLVE_BEFORE"
+  fi
+else
+  export PIP_NO_INDEX=1
+  export PIP_FIND_LINKS=/deps
+  export PIP_ONLY_BINARY=:all:
+fi
 /tmp/clearhash-python/bin/python -m pip install --quiet build
 /tmp/clearhash-python/bin/python -m build --sdist --outdir /out
 "#

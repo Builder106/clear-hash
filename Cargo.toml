@@ -7,6 +7,7 @@ members = [
     "crates/clearhash-registry",
     "crates/clearhash-provenance",
     "crates/clearhash-sandbox",
+    "crates/clearhash-study",
     "crates/clearhash-web",
 ]
 

@@ -1,0 +1,32 @@
+[package]
+name = "clearhash-study"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Measurement driver for the ClearHash network-off verifiability study. Not a verifier."
+publish = false
+
+[[bin]]
+name = "clearhash-study"
+path = "src/main.rs"
+
+[dependencies]
+clearhash-core = { workspace = true }
+clearhash-ecosystems = { workspace = true }
+clearhash-registry = { workspace = true }
+clearhash-provenance = { workspace = true }
+clearhash-sandbox = { workspace = true }
+
+tokio = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+reqwest = { workspace = true }
+futures-util = "0.3"
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

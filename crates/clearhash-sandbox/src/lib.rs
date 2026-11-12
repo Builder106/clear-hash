@@ -1259,6 +1259,59 @@ else:
         ));
     }
 
+    /// Constructed fixture: a dependency-free npm package with no lockfile. The verifier
+    /// refuses it; the study's network mode rebuilds it with the same recipe.
+    #[tokio::test]
+    async fn npm_network_mode_rebuilds_without_a_committed_lock() {
+        if !docker_reachable().await {
+            eprintln!("skipping npm network mode: Docker daemon unreachable");
+            return;
+        }
+        let repo = tempfile::tempdir().unwrap();
+        git(repo.path(), &["init", "--quiet"]);
+        std::fs::write(
+            repo.path().join("package.json"),
+            r#"{"name":"network-fixture","version":"1.0.0","scripts":{"build":"node -e \"require('fs').writeFileSync('built.js','1')\""}}"#,
+        )
+        .unwrap();
+        let source = RebuildSource {
+            source_repo: repo.path().to_string_lossy().into(),
+            commit_sha: commit_fixture(repo.path()),
+        };
+        let pkg: PackageRef = "npm:network-fixture@1.0.0".parse().unwrap();
+        let adapter = for_ecosystem(pkg.ecosystem);
+
+        let verifier = tempfile::tempdir().unwrap();
+        assert!(matches!(
+            rebuild(&*adapter, &source, &pkg, verifier.path()).await,
+            Err(SandboxError::Adapter(_))
+        ));
+
+        let study = tempfile::tempdir().unwrap();
+        let source_dir = study.path().join("source");
+        std::fs::create_dir_all(&source_dir).unwrap();
+        clone_and_pin(&source.source_repo, &source.commit_sha, &source_dir)
+            .await
+            .unwrap();
+        let options = RebuildOptions {
+            env: vec![
+                "CLEARHASH_DEPENDENCY_MODE=network".into(),
+                "CLEARHASH_RESOLVE_BEFORE=2026-10-31T00:00:00Z".into(),
+            ],
+            timeout: Some(Duration::from_secs(600)),
+            ..Default::default()
+        };
+        let rebuilt = rebuild_checked_out(&*adapter, &source, &pkg, study.path(), &options)
+            .await
+            .unwrap();
+        let tree = extract_archive(&*adapter, &rebuilt.artifact_path, &pkg, study.path()).unwrap();
+        assert!(tree.join("built.js").is_file());
+        assert!(image_id(adapter.rebuild_image())
+            .await
+            .unwrap()
+            .is_some_and(|id| id.starts_with("sha256:")));
+    }
+
     #[tokio::test]
     async fn container_jobs_stop_at_the_time_limit() {
         if !docker_reachable().await {
