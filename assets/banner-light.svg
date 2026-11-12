@@ -21,14 +21,14 @@
   <text x="320" y="245" fill="#475569"
         font-family="ui-sans-serif, -apple-system, 'Helvetica Neue', sans-serif"
         font-size="22" font-weight="400">
-    Rebuild every package. Compare every byte. Block every tamper.
+    Checks that a registry package is what its source code builds.
   </text>
 
   <g transform="translate(320, 290)" font-family="ui-monospace, 'SF Mono', Menlo, monospace">
     <text x="0" y="0" fill="#64748b" font-size="18">$ </text>
-    <text x="20" y="0" fill="#0f172a" font-size="18">clearhash verify </text>
-    <text x="200" y="0" fill="#0284c7" font-size="18">npm:sigstore@2.3.1</text>
-    <text x="0" y="32" fill="#16a34a" font-size="18">✓ MATCH </text>
-    <text x="80" y="32" fill="#475569" font-size="18">tree-hash ec714016d7e4ce74…</text>
+    <text x="20" y="0" fill="#0f172a" font-size="18">clearhash inspect </text>
+    <text x="215" y="0" fill="#0284c7" font-size="18">npm:sigstore@2.3.1</text>
+    <text x="0" y="32" fill="#16a34a" font-size="18">✓ OK </text>
+    <text x="60" y="32" fill="#475569" font-size="18">attestation verified</text>
   </g>
 </svg>
