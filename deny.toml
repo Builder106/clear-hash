@@ -24,9 +24,7 @@ deny = []
 
 [advisories]
 version = 2
-ignore = [
-    "RUSTSEC-2023-0071", # Marvin Attack timing sidechannel in rsa 0.9.10 (via sigstore); unpatched upstream
-]
+ignore = []
 
 [sources]
 unknown-registry = "warn"
