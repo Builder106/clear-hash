@@ -57,7 +57,7 @@ content-hash within a 0-day window.
   `clearhash verify` on each resolved package, and only proceeds if all match. Optional
   per-org policy: block / warn / log.
 
-- [ ] **CI integration recipes.** GitHub Action, GitLab template, and `pre-commit` hook for
+- [x] **CI integration recipes.** GitHub Action, GitLab template, and `pre-commit` hook for
 
   verifying new lockfile entries on PRs.
 

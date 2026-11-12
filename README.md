@@ -235,8 +235,8 @@ Cargo packaging retains its existing network policy.
 
 ### Gate npm installs with `clearhash-npm`
 
-`cargo install --path crates/clearhash-cli` installs both `clearhash` and
-`clearhash-npm`. With npm 11+ and Docker available, run from a project root:
+`cargo install --path crates/clearhash-cli` installs `clearhash-npm` alongside
+`clearhash` and `clearhash-ci`. With npm 11+ and Docker available, run from a project root:
 
 ```bash
 clearhash-npm install
@@ -303,6 +303,21 @@ is not a tamper-resistant policy enforcement service.
 Shim exit codes are 0 for a successful npm command, 1 for a policy block, and 3
 for wrapper/configuration failures. Resolution and install failures preserve npm's
 exit status. `warn` and `log` deliberately allow nonmatching packages to install.
+
+### Verify new lockfile entries in CI
+
+The CLI package also installs `clearhash-ci`, which compares an npm v2/v3 lockfile
+against a trusted Git base and verifies each new or changed name/version/integrity
+tuple. It includes transitive dependencies and binds registry downloads to the
+locked integrity hashes. The staged mode reads the Git index for pre-commit checks.
+
+```bash
+clearhash-ci --base origin/main
+clearhash-ci --staged
+```
+
+See [CI integration recipes](docs/CI_INTEGRATION.md) for the GitHub Action, GitLab
+template, pre-commit hook, runner prerequisites, and supported lockfile scope.
 
 ## Exit codes
 

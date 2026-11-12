@@ -1,0 +1,33 @@
+name: ClearHash lockfile verification
+description: Rebuild and verify added or changed npm lockfile packages against a trusted Git base.
+inputs:
+  base:
+    description: Trusted base commit SHA, available in the checked-out repository.
+    required: true
+  lockfile:
+    description: Repository-relative npm lock path (sibling shrinkwrap takes precedence).
+    default: package-lock.json
+runs:
+  using: composite
+  steps:
+    - name: Install ClearHash from the selected action revision
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        CLEARHASH_ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        cargo install --locked --path "$CLEARHASH_ACTION_PATH/crates/clearhash-cli" \
+          --bin clearhash --bin clearhash-ci --root "$RUNNER_TEMP/clearhash-tools" --force
+    - name: Verify lockfile additions
+      shell: bash
+      env:
+        CLEARHASH_BASE: ${{ inputs.base }}
+        CLEARHASH_LOCKFILE: ${{ inputs.lockfile }}
+        # Use the verifier built from the selected action, not a repository override.
+        CLEARHASH_VERIFY_BIN: ${{ runner.temp }}/clearhash-tools/bin/clearhash
+      run: |
+        set -euo pipefail
+        test -n "$CLEARHASH_BASE"
+        "$RUNNER_TEMP/clearhash-tools/bin/clearhash-ci" \
+          --base "$CLEARHASH_BASE" --lockfile "$CLEARHASH_LOCKFILE"

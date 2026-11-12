@@ -1,0 +1,15 @@
+# Copy this template from a reviewed ClearHash revision into your repository.
+# Extend the hidden job on a Linux shell runner with Git, Docker, clearhash and
+# clearhash-ci installed from that same revision. See docs/CI_INTEGRATION.md.
+.clearhash-lockfile:
+  stage: .pre
+  variables:
+    GIT_DEPTH: "0"
+    CLEARHASH_LOCKFILE: package-lock.json
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - '**/package-lock.json'
+        - '**/npm-shrinkwrap.json'
+  script:
+    - clearhash-ci --base "${CI_MERGE_REQUEST_DIFF_BASE_SHA:?Merge request base SHA is required}" --lockfile "$CLEARHASH_LOCKFILE"

@@ -17,6 +17,10 @@ path = "src/main.rs"
 name = "clearhash-npm"
 path = "src/bin/clearhash-npm.rs"
 
+[[bin]]
+name = "clearhash-ci"
+path = "src/bin/clearhash-ci.rs"
+
 [dependencies]
 clearhash-core = { workspace = true }
 clearhash-ecosystems = { workspace = true }

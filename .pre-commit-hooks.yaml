@@ -1,0 +1,8 @@
+- id: clearhash-lockfile
+  name: ClearHash new npm lock entries
+  description: Verify staged npm lock additions and changes against HEAD (requires Git and Docker).
+  entry: clearhash-ci --staged
+  language: system
+  files: ^(package-lock\.json|npm-shrinkwrap\.json)$
+  pass_filenames: false
+  stages: [pre-commit]
