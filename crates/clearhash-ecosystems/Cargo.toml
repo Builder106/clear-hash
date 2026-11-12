@@ -22,7 +22,7 @@ hex = { workspace = true }
 thiserror = { workspace = true }
 chrono = { workspace = true }
 x509-parser = "0.18"
-base64 = "0.22"
+base64 = "0.23"
 toml = "1.2"
 semver = "1"
 
