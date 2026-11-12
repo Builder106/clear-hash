@@ -8,6 +8,7 @@ use clearhash_core::{Ecosystem, FileEntry, PackageRef, ProvenanceClaim};
 use url::Url;
 
 pub mod cargo;
+pub mod js_locks;
 pub mod npm;
 pub mod offline;
 pub mod pypi;
@@ -95,6 +96,15 @@ pub trait EcosystemAdapter: Send + Sync {
     ) -> Result<Option<Vec<offline::Dependency>>, AdapterError> {
         let _ = source;
         Ok(None)
+    }
+
+    /// Package-manager releases the recipe needs beyond the image, fetched and checked
+    /// like dependencies and mounted read-only at `/tools`. Unlike `/deps`, `/tools`
+    /// does not change the network policy, so measurement arms with the network on
+    /// run the same release.
+    fn build_tools(&self, source: &Path) -> Result<Vec<offline::Dependency>, AdapterError> {
+        let _ = source;
+        Ok(Vec::new())
     }
 
     /// Build script injected into the network-isolated container. The sandbox crate

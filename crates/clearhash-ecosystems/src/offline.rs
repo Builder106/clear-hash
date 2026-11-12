@@ -13,7 +13,18 @@ pub struct Dependency {
     pub url: Url,
     /// A single, safe filename under the cache directory.
     pub filename: String,
-    pub integrity: Integrity,
+    pub check: Check,
+}
+
+/// How the host checks an archive before it reaches a container.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Check {
+    /// A hash pinned by the lock, a `packageManager` field, or ClearHash itself.
+    Pinned(Integrity),
+    /// The `dist.integrity` in this npm registry version document, read over HTTPS.
+    /// Used only where no pin covers the tarball: Yarn 2+ locks pin Yarn's own zip,
+    /// which Yarn checks inside the container, and unhashed `packageManager` pins.
+    Registry(Url),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,7 +33,7 @@ pub struct Integrity {
     digests: Vec<Vec<u8>>,
 }
 
-fn invalid(message: impl Into<String>) -> AdapterError {
+pub(crate) fn invalid(message: impl Into<String>) -> AdapterError {
     AdapterError::InvalidRebuild(message.into())
 }
 
@@ -81,7 +92,11 @@ impl Integrity {
     }
 }
 
-fn archive(url: &str, filename: String, integrity: Integrity) -> Result<Dependency, AdapterError> {
+pub(crate) fn archive(
+    url: &str,
+    filename: String,
+    check: Check,
+) -> Result<Dependency, AdapterError> {
     let url = Url::parse(url).map_err(|_| invalid("invalid dependency URL"))?;
     if url.scheme() != "https"
         || url.host_str().is_none()
@@ -98,8 +113,30 @@ fn archive(url: &str, filename: String, integrity: Integrity) -> Result<Dependen
     Ok(Dependency {
         url,
         filename,
-        integrity,
+        check,
     })
+}
+
+/// The registry tarball URL for an exact npm version. Never re-resolves a range.
+pub(crate) fn registry_tarball(name: &str, version: &str) -> Result<String, AdapterError> {
+    semver::Version::parse(version).map_err(|_| {
+        invalid(format!(
+            "{name}@{version}: expected an exact registry version"
+        ))
+    })?;
+    let unscoped = name.rsplit('/').next().unwrap_or("");
+    let scoped_once = name.matches('/').count() == usize::from(name.starts_with('@'));
+    if unscoped.is_empty()
+        || !scoped_once
+        || !name
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || b"@/._-".contains(&c))
+    {
+        return Err(invalid(format!("{name}: invalid registry package name")));
+    }
+    Ok(format!(
+        "https://registry.npmjs.org/{name}/-/{unscoped}-{version}.tgz"
+    ))
 }
 
 #[derive(Deserialize)]
@@ -170,28 +207,22 @@ pub fn npm(source: &Path) -> Result<Vec<Dependency>, AdapterError> {
                 let version = package
                     .version
                     .ok_or_else(|| invalid(format!("{path}: missing locked version")))?;
-                semver::Version::parse(&version)
-                    .map_err(|_| invalid(format!("{path}: expected an exact registry version")))?;
                 let name = package.name.as_deref().unwrap_or_else(|| {
                     path.rsplit_once("node_modules/")
                         .map_or("", |(_, name)| name)
                 });
-                let unscoped = name.rsplit('/').next().unwrap_or("");
-                if unscoped.is_empty()
-                    || !name
-                        .bytes()
-                        .all(|c| c.is_ascii_alphanumeric() || b"@/._-".contains(&c))
-                {
-                    return Err(invalid(format!("{path}: invalid registry package name")));
-                }
-                format!("https://registry.npmjs.org/{name}/-/{unscoped}-{version}.tgz")
+                registry_tarball(name, &version).map_err(|e| invalid(format!("{path}: {e}")))?
             }
         };
         let integrity = Integrity::parse(package.integrity.as_deref().unwrap_or(""))?;
-        let dependency = archive(&url, format!("{}.tgz", archives.len()), integrity)?;
+        let dependency = archive(
+            &url,
+            format!("{}.tgz", archives.len()),
+            Check::Pinned(integrity),
+        )?;
         if !archives
             .iter()
-            .any(|d: &Dependency| d.url == dependency.url && d.integrity == dependency.integrity)
+            .any(|d: &Dependency| d.url == dependency.url && d.check == dependency.check)
         {
             archives.push(dependency);
         }
@@ -252,7 +283,7 @@ pub fn pypi(source: &Path) -> Result<Vec<Dependency>, AdapterError> {
             if !name.ends_with(".whl") {
                 return Err(invalid("locked artifact is not a wheel"));
             }
-            let dependency = archive(&wheel.url, name, integrity)?;
+            let dependency = archive(&wheel.url, name, Check::Pinned(integrity))?;
             if let Some(previous) = archives
                 .iter()
                 .find(|d: &&Dependency| d.filename == dependency.filename)
@@ -269,11 +300,18 @@ pub fn pypi(source: &Path) -> Result<Vec<Dependency>, AdapterError> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use serde_json::json;
 
-    fn sri(bytes: &[u8]) -> String {
+    pub(crate) fn pinned(dependency: &Dependency) -> &Integrity {
+        match &dependency.check {
+            Check::Pinned(integrity) => integrity,
+            Check::Registry(url) => panic!("expected a pinned hash, found {url}"),
+        }
+    }
+
+    pub(crate) fn sri(bytes: &[u8]) -> String {
         format!("sha512-{}", STANDARD.encode(Sha512::digest(bytes)))
     }
 
@@ -320,10 +358,8 @@ mod tests {
         assert!(dependencies
             .iter()
             .any(|d| d.url.as_str() == "https://registry.npmjs.org/@scope/pkg/-/pkg-1.2.3.tgz"));
-        assert!(dependencies.iter().any(|d| d.integrity.matches(b"archive")));
-        assert!(dependencies
-            .iter()
-            .any(|d| d.integrity.matches(b"optional")));
+        assert!(dependencies.iter().any(|d| pinned(d).matches(b"archive")));
+        assert!(dependencies.iter().any(|d| pinned(d).matches(b"optional")));
     }
 
     #[test]
@@ -375,8 +411,8 @@ mod tests {
         std::fs::write(source.path().join("pylock.toml"), &valid).unwrap();
         let wheels = pypi(source.path()).unwrap();
         assert_eq!(wheels.len(), 1);
-        assert!(wheels[0].integrity.matches(b"wheel"));
-        assert!(!wheels[0].integrity.matches(b"tampered"));
+        assert!(pinned(&wheels[0]).matches(b"wheel"));
+        assert!(!pinned(&wheels[0]).matches(b"tampered"));
         for text in [
             valid.replace("https:", "http:"),
             valid.replace(&hash, "abc"),

@@ -223,6 +223,9 @@ impl From<&ProvenanceClaim> for RebuildSource {
 pub struct RebuildOptions {
     /// Host-verified archives mounted read-only at `/deps`. Their presence disables networking.
     pub dependencies: Option<PathBuf>,
+    /// Host-verified package-manager release mounted read-only at `/tools`. It leaves the
+    /// network policy to `dependencies`.
+    pub tools: Option<PathBuf>,
     /// Extra `KEY=value` entries for the container environment.
     pub env: Vec<String>,
     pub timeout: Option<Duration>,
@@ -252,6 +255,7 @@ pub async fn rebuild(
     clone_and_pin(&source.source_repo, &source.commit_sha, &source_dir).await?;
     let options = RebuildOptions {
         dependencies: prepare_offline(adapter, &source_dir, workdir).await?,
+        tools: prepare_tools(adapter, &source_dir, workdir).await?,
         ..Default::default()
     };
     rebuild_checked_out(adapter, source, pkg, workdir, &options).await
@@ -265,6 +269,16 @@ pub async fn prepare_offline(
     workdir: &Path,
 ) -> Result<Option<PathBuf>, SandboxError> {
     offline::prepare(adapter, source_dir, workdir).await
+}
+
+/// Fetch and hash-verify the package-manager release the adapter needs into `workdir/tools`.
+/// Returns `None` when the image already has it (npm).
+pub async fn prepare_tools(
+    adapter: &dyn EcosystemAdapter,
+    source_dir: &Path,
+    workdir: &Path,
+) -> Result<Option<PathBuf>, SandboxError> {
+    offline::prepare_tools(adapter, source_dir, workdir).await
 }
 
 /// Rebuild from a tree already pinned at `workdir/source`; the artifact lands in `workdir/rebuilt`.
@@ -285,6 +299,7 @@ pub async fn rebuild_checked_out(
         options: &RebuildOptions {
             env: [package_env(pkg), options.env.clone()].concat(),
             dependencies: options.dependencies.clone(),
+            tools: options.tools.clone(),
             ..*options
         },
         collect: Some((adapter.built_artifact_dir(), &output_dir)),
@@ -477,6 +492,12 @@ async fn start_container(docker: &Docker, job: &ContainerJob<'_>) -> Result<Stri
         binds.push(format!(
             "{}:/deps:ro",
             std::fs::canonicalize(dependencies)?.display()
+        ));
+    }
+    if let Some(tools) = &job.options.tools {
+        binds.push(format!(
+            "{}:/tools:ro",
+            std::fs::canonicalize(tools)?.display()
         ));
     }
 

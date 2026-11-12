@@ -58,6 +58,16 @@ impl NpmAdapter {
             platform: Some(platform),
         }
     }
+
+    /// npm `cpu` name of the build platform. Without a selected platform, Docker runs
+    /// the image for the host architecture.
+    fn cpu(&self) -> &'static str {
+        match self.platform {
+            Some(platform) => platform.cpu(),
+            None if cfg!(target_arch = "aarch64") => "arm64",
+            None => "x64",
+        }
+    }
 }
 
 #[async_trait]
@@ -232,7 +242,24 @@ impl EcosystemAdapter for NpmAdapter {
         &self,
         source: &std::path::Path,
     ) -> Result<Option<Vec<crate::offline::Dependency>>, AdapterError> {
-        crate::offline::npm(source).map(Some)
+        use crate::js_locks::{self, Manager};
+        let cpu = self.cpu();
+        match js_locks::manager(source) {
+            Some(Manager::Pnpm) => js_locks::pnpm(source, cpu),
+            Some(Manager::Yarn) => js_locks::yarn(source),
+            Some(Manager::YarnBerry) => js_locks::yarn_berry(source),
+            Some(Manager::Npm) | None => crate::offline::npm(source),
+        }
+        .map(Some)
+    }
+
+    fn build_tools(
+        &self,
+        source: &std::path::Path,
+    ) -> Result<Vec<crate::offline::Dependency>, AdapterError> {
+        Ok(crate::js_locks::package_manager(source, self.cpu())?
+            .into_iter()
+            .collect())
     }
 
     fn built_artifact_dir(&self) -> &'static str {
@@ -290,7 +317,7 @@ struct NativeDist {
 }
 
 // npm permits positive allowlists and negative exclusions; exclusions take precedence.
-fn allows_target(values: Option<&[String]>, target: &str) -> bool {
+pub(crate) fn allows_target(values: Option<&[String]>, target: &str) -> bool {
     let Some(values) = values else { return true };
     !values.iter().any(|v| v.strip_prefix('!') == Some(target))
         && (values.is_empty()
