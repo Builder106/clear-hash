@@ -134,6 +134,65 @@ pub fn compare_trees(
     }
 }
 
+/// Compare two trees with no adapter ignore list and no content normalization.
+/// Regular files and symlinks count; a symlink's content is its target path.
+pub fn compare_trees_strict(
+    registry_root: &Path,
+    rebuild_root: &Path,
+) -> Result<VerifyOutcome, SandboxError> {
+    let reg_entries = strict_entries(registry_root)?;
+    let rb_entries = strict_entries(rebuild_root)?;
+    let reg_hash = FileTreeHash::from_sorted_entries(&reg_entries);
+    if reg_hash == FileTreeHash::from_sorted_entries(&rb_entries) {
+        Ok(VerifyOutcome::Match {
+            tree_hash: reg_hash,
+        })
+    } else {
+        Ok(VerifyOutcome::TreeMismatch {
+            differences: tree::diff_sorted(&reg_entries, &rb_entries),
+        })
+    }
+}
+
+fn strict_entries(root: &Path) -> Result<Vec<clearhash_core::FileEntry>, SandboxError> {
+    let mut out = Vec::new();
+    for entry in walkdir::WalkDir::new(root).follow_links(false) {
+        let entry = entry.map_err(|e| SandboxError::Extract(e.to_string()))?;
+        let file_type = entry.file_type();
+        let (bytes, executable) = if file_type.is_file() {
+            (std::fs::read(entry.path())?, is_executable(&entry)?)
+        } else if file_type.is_symlink() {
+            let target = std::fs::read_link(entry.path())?;
+            (target.to_string_lossy().into_owned().into_bytes(), false)
+        } else {
+            continue;
+        };
+        let rel = entry
+            .path()
+            .strip_prefix(root)
+            .map_err(|e| SandboxError::Extract(e.to_string()))?
+            .to_string_lossy()
+            .replace('\\', "/");
+        out.push(tree::entry_from_bytes(rel, &bytes, executable));
+    }
+    out.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(out)
+}
+
+#[cfg(unix)]
+fn is_executable(entry: &walkdir::DirEntry) -> Result<bool, SandboxError> {
+    use std::os::unix::fs::PermissionsExt;
+    let metadata = entry
+        .metadata()
+        .map_err(|e| SandboxError::Extract(e.to_string()))?;
+    Ok(metadata.permissions().mode() & 0o100 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_executable(_: &walkdir::DirEntry) -> Result<bool, SandboxError> {
+    Ok(false)
+}
+
 // Rebuild orchestration.
 
 pub struct RebuildOutcome {
@@ -1133,6 +1192,71 @@ else:
 
         let outcome = compare_trees(&*adapter, &r1, &r2).unwrap();
         assert!(matches!(outcome, VerifyOutcome::Match { .. }));
+    }
+
+    /// Constructed fixture trees: content the npm adapter ignores or rewrites must still
+    /// count in the strict comparison.
+    #[cfg(unix)]
+    #[test]
+    fn strict_comparison_counts_ignored_and_normalized_content() {
+        let adapter = for_ecosystem(clearhash_core::Ecosystem::Npm);
+        let registry = tempfile::tempdir().unwrap();
+        let rebuild = tempfile::tempdir().unwrap();
+        for root in [registry.path(), rebuild.path()] {
+            std::fs::write(root.join("index.js"), "module.exports = 1;\n").unwrap();
+            std::os::unix::fs::symlink("index.js", root.join("main.js")).unwrap();
+        }
+        std::fs::write(
+            registry.path().join("package.json"),
+            r#"{"name":"x","version":"1"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            rebuild.path().join("package.json"),
+            "{\n  \"name\": \"x\",\n  \"version\": \"1\"\n}",
+        )
+        .unwrap();
+        std::fs::write(registry.path().join(".npmignore"), "test/\n").unwrap();
+
+        assert!(matches!(
+            compare_trees(&*adapter, registry.path(), rebuild.path()).unwrap(),
+            VerifyOutcome::Match { .. }
+        ));
+        let VerifyOutcome::TreeMismatch { differences } =
+            compare_trees_strict(registry.path(), rebuild.path()).unwrap()
+        else {
+            panic!("strict comparison accepted ignored and rewritten content");
+        };
+        assert_eq!(
+            differences,
+            vec![
+                clearhash_core::TreeDifference::OnlyInRegistry {
+                    path: ".npmignore".into()
+                },
+                clearhash_core::TreeDifference::ContentDiffers {
+                    path: "package.json".into()
+                },
+            ]
+        );
+
+        std::fs::remove_file(registry.path().join(".npmignore")).unwrap();
+        std::fs::copy(
+            rebuild.path().join("package.json"),
+            registry.path().join("package.json"),
+        )
+        .unwrap();
+        assert!(matches!(
+            compare_trees_strict(registry.path(), rebuild.path()).unwrap(),
+            VerifyOutcome::Match { .. }
+        ));
+        std::fs::remove_file(registry.path().join("main.js")).unwrap();
+        std::os::unix::fs::symlink("/etc/passwd", registry.path().join("main.js")).unwrap();
+        assert!(matches!(
+            compare_trees_strict(registry.path(), rebuild.path()).unwrap(),
+            VerifyOutcome::TreeMismatch { differences } if differences == vec![
+                clearhash_core::TreeDifference::ContentDiffers { path: "main.js".into() }
+            ]
+        ));
     }
 
     #[tokio::test]
