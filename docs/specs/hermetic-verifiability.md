@@ -174,6 +174,70 @@ extending the verifier. It is made from the input mix, never from outcomes:
 
 The lockfile mix is reported as a descriptive result either way.
 
+Result (2026-11-12): 46 of 96 listed releases (47.9%) need pnpm or Yarn, so
+the verifier is extended as follows before any pnpm or Yarn rebuild runs.
+
+### pnpm and Yarn support
+
+The lockfile picks the package manager. npm locks take precedence over
+`pnpm-lock.yaml`, which takes precedence over `yarn.lock`, so a release
+already handled by npm is unchanged. A lock survey of the 46 releases found
+pnpm lockfile 9.0 in all 38 pnpm roots, Yarn 2 or later in 7 of 8 Yarn roots
+(lock formats 6 to 10), and Yarn 1 in one.
+
+- **pnpm (lockfile 9.0 only).** Every `packages` entry must carry an SRI
+  `integrity`. Registry entries are fetched from `registry.npmjs.org`;
+  entries with a git, directory, or non-registry tarball resolution are
+  rejected at the lock stage, as git sources already are for npm. Entries
+  whose `os`, `cpu`, or `libc` excludes the build platform are skipped,
+  because pnpm skips them too.
+- **Yarn 1.** Every entry must carry a SHA-256, SHA-384, or SHA-512
+  `integrity`. SHA-1-only entries are rejected, as for npm.
+- **Yarn 2 and later.** The lock's `checksum` covers Yarn's own zip of the
+  package, not the registry tarball, so the host cannot check the tarball
+  against the lock. The host checks each tarball against the `dist.integrity`
+  that `registry.npmjs.org` publishes for that exact version, and Yarn
+  checks the lock checksum inside the network-off container with
+  `checksumBehavior: throw`. `npm:` resolutions are fetched; `workspace:`,
+  `link:`, `portal:`, and `patch:` entries need no download; any other
+  protocol is rejected at the lock stage.
+  Every entry is fetched whatever its platform, because Yarn fetches some
+  packages for other platforms, such as the base of its built-in patches.
+  Yarn leaves the checksum out of platform-specific entries (those with
+  `conditions`) that the locking machine never fetched. Such entries rest
+  on the registry integrity alone; any other entry without a checksum is
+  rejected.
+
+Inside the network-off container, a loopback-only server started by the
+recipe serves the verified tarballs at registry paths to pnpm and Yarn 2+,
+and stops before any build code runs. Yarn 1 reads them as an offline
+mirror. Install, build, and pack use the project's package manager
+(`pnpm pack`, `yarn pack`), because those rewrite `workspace:` and `catalog:`
+ranges in the packed `package.json` and `npm pack` does not. Dependency
+lifecycle scripts stay disabled. `yarn pack` in Yarn 2+ has no switch to
+skip the project's own `prepack` and `postpack`, so those run for Yarn 2+
+projects, in every arm alike. pnpm 11 and later check each locked
+package's age (`minimumReleaseAge`) and trust history against registry
+metadata after install. Those checks compare publish dates with the day of
+the run, not with the release, so they are turned off in every arm.
+
+**The package manager itself** is fetched on the host and mounted read-only
+at `/tools` in all three arms, so arm N uses the same binary as arm H:
+
+1. A committed Yarn `yarnPath` release is used as is (pinned by Git).
+2. Otherwise `packageManager` names the version. A `+sha512` hash pins the
+   pnpm 9 to 11 tarball. pnpm 12 ships a native binary in
+   `@pnpm/exe.linux-<arch>`, which that hash does not cover, so its
+   tarball, like any unhashed pin, is checked against the registry's
+   published integrity. Yarn 2+ comes from `@yarnpkg/cli-dist`.
+3. With no `packageManager`, pnpm 10.34.9 and Yarn 1.22.22 are used, pinned
+   by hash in ClearHash. Yarn 2+ with no pin is rejected at the lock stage.
+
+Arm I still writes or completes an npm lock when the root has no lock or an
+npm lock that arm H rejects. A committed pnpm or Yarn lock that arm H
+rejects is not re-resolved, so arm I records the same lock-stage failure. Re-resolving would replace the
+dependency set the project chose, which arm I is not meant to measure.
+
 ## Outcomes
 
 For each release and arm, record the first failing stage: attestation,
@@ -245,6 +309,8 @@ before the main run.
 5. Cleanup of the rebuild container on every exit path and of work
    directories after each release, so the run fits the build host's free
    disk.
+6. Network-off pnpm and Yarn installs, as set out under Package-manager
+   scope.
 
 Statistics run in a small locked Python environment under `study/analysis/`.
 
