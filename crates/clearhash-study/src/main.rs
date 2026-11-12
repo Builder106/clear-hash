@@ -339,20 +339,26 @@ async fn study_release(release: &Release, arms: &[Arm], context: &Study) -> Resu
     let started = Instant::now();
     let started_at = chrono::Utc::now().to_rfc3339();
     let prepared = prepare(&*adapter, &pkg).await;
+    let release_dir = context.workdir.join(release.slug());
+    // One network clone per release; each arm clones this local copy.
+    let mirror = match &prepared {
+        Ok(prepared) => Some(mirror_source(prepared, &release_dir).await),
+        Err(_) => None,
+    };
     for &arm in arms {
         let arm_started = Instant::now();
         let arm_started_at = chrono::Utc::now().to_rfc3339();
-        let (result, attested) = match &prepared {
-            Err(failure) => (Err(Failure::new(failure.stage, &failure.error)), None),
-            Ok(prepared) => {
-                let dir = context
-                    .workdir
-                    .join(release.slug())
-                    .join(format!("{arm:?}"));
-                let result = run_arm(arm, &*adapter, &pkg, release, prepared, &dir).await;
+        let (result, attested) = match (&prepared, &mirror) {
+            (Err(failure), _) | (Ok(_), Some(Err(failure))) => {
+                (Err(Failure::new(failure.stage, &failure.error)), None)
+            }
+            (Ok(prepared), Some(Ok(origin))) => {
+                let dir = release_dir.join(format!("{arm:?}"));
+                let result = run_arm(arm, &*adapter, &pkg, release, prepared, origin, &dir).await;
                 release_workdir(adapter.rebuild_image(), &dir).await;
                 (result, Some(&prepared.source))
             }
+            (Ok(_), None) => unreachable!("a mirror is attempted for every prepared release"),
         };
         let (seconds, started_at) = match &prepared {
             Ok(_) => (arm_started.elapsed().as_secs_f64(), arm_started_at),
@@ -391,6 +397,12 @@ async fn study_release(release: &Release, arms: &[Arm], context: &Study) -> Resu
         let mut ledger = context.ledger.lock().await;
         ledger.write_all(&line).await?;
         ledger.flush().await?;
+    }
+    // Arm folders are already gone; this removes the mirror and the empty release folder.
+    if let Err(error) = std::fs::remove_dir_all(&release_dir) {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            tracing::warn!(dir = %release_dir.display(), "release directory not removed: {error}");
+        }
     }
     Ok(())
 }
@@ -445,19 +457,34 @@ async fn prepare(adapter: &dyn EcosystemAdapter, pkg: &PackageRef) -> Result<Pre
     })
 }
 
+/// Clone the attested repository once and pin it, as the verifier would.
+async fn mirror_source(prepared: &Prepared, release_dir: &Path) -> Result<PathBuf, Failure> {
+    let mirror = release_dir.join("mirror");
+    let _ = std::fs::remove_dir_all(&mirror);
+    std::fs::create_dir_all(&mirror).map_err(|e| Failure::new(Stage::Infrastructure, e))?;
+    let source = &prepared.source;
+    clearhash_sandbox::clone_and_pin(&source.source_repo, &source.commit_sha, &mirror)
+        .await
+        .map_err(|e| sandbox(Stage::Source, e))?;
+    Ok(mirror)
+}
+
 async fn run_arm(
     arm: Arm,
     adapter: &dyn EcosystemAdapter,
     pkg: &PackageRef,
     release: &Release,
     prepared: &Prepared,
+    origin: &Path,
     dir: &Path,
 ) -> Result<ArmResult, Failure> {
     let _ = std::fs::remove_dir_all(dir);
     let source_dir = dir.join("source");
     std::fs::create_dir_all(&source_dir).map_err(|e| Failure::new(Stage::Infrastructure, e))?;
     let source = &prepared.source;
-    clearhash_sandbox::clone_and_pin(&source.source_repo, &source.commit_sha, &source_dir)
+    // A local clone hard-links objects, so arms add only a working tree each.
+    // HEAD is still checked against the attested commit.
+    clearhash_sandbox::clone_and_pin(&origin.to_string_lossy(), &source.commit_sha, &source_dir)
         .await
         .map_err(|e| sandbox(Stage::Source, e))?;
 
