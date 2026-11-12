@@ -55,33 +55,20 @@ body {
     /* CRT scanlines — a 3px horizontal stripe pattern, intentionally faint
      * so it never interferes with reading.  Fixed so it doesn't move with
      * scroll.  Phosphor green tint at extremely low alpha. */
-    background-image:
-        repeating-linear-gradient(
-            to bottom,
-            rgba(94, 255, 139, 0.018) 0px,
-            rgba(94, 255, 139, 0.018) 1px,
-            transparent 1px,
-            transparent 3px
-        ),
-        /* corner phosphor wash — top-left, simulating an old CRT glow */
-        radial-gradient(
-            70% 50% at 0% 0%,
-            rgba(94, 255, 139, 0.045) 0%,
-            transparent 60%
-        );
-    background-attachment: fixed, fixed;
-    background-size: 100% 3px, 100% 100%;
+    background-image: repeating-linear-gradient(
+        to bottom,
+        rgba(94, 255, 139, 0.018) 0px,
+        rgba(94, 255, 139, 0.018) 1px,
+        transparent 1px,
+        transparent 3px
+    );
+    background-attachment: fixed;
+    background-size: 100% 3px;
 }
 
 ::selection {
     background: var(--prompt);
     color: var(--bg);
-}
-
-/* Phosphor glow on the highest-contrast prompts only — used sparingly so
- * the text doesn't blur the rest of the time. */
-.glow {
-    text-shadow: 0 0 6px rgba(94, 255, 139, 0.55), 0 0 14px rgba(94, 255, 139, 0.25);
 }
 
 /* Typographic Tokens */
@@ -139,18 +126,6 @@ header.bar .lhs {
     align-items: center;
     gap: 1rem;
 }
-header.bar .traffic {
-    display: inline-flex;
-    gap: 0.4rem;
-}
-header.bar .traffic span {
-    width: 9px; height: 9px; border-radius: 50%;
-    display: inline-block;
-    background: var(--fg-deep);
-}
-header.bar .traffic span:nth-child(1) { background: #ff5f56; }
-header.bar .traffic span:nth-child(2) { background: #ffbd2e; }
-header.bar .traffic span:nth-child(3) { background: #27c93f; }
 header.bar .ses { color: var(--fg-dim); }
 header.bar .ses b { color: var(--fg); font-weight: 500; }
 header.bar nav { display: flex; gap: 1.25rem; }
@@ -210,6 +185,8 @@ pre.banner {
 .block .body p:last-child { margin-bottom: 0; }
 
 /* The hero block uses a slightly larger heading for the headline. */
+.block.hero { text-wrap: balance; }
+.block.hero .body { text-wrap: pretty; }
 .block.hero h2 {
     font-size: 1.2rem;
 }
@@ -485,17 +462,6 @@ figure.exhibit .titlebar {
     font-size: 11px;
     color: var(--fg-dim);
 }
-figure.exhibit .titlebar .dots {
-    display: inline-flex;
-    gap: 0.35rem;
-}
-figure.exhibit .titlebar .dots span {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--fg-deep);
-}
-figure.exhibit .titlebar .dots span:nth-child(1) { background: #ff5f56; }
-figure.exhibit .titlebar .dots span:nth-child(2) { background: #ffbd2e; }
-figure.exhibit .titlebar .dots span:nth-child(3) { background: #27c93f; }
 figure.exhibit img { display: block; width: 100%; }
 figure.exhibit figcaption {
     margin-top: 0.55rem;
@@ -503,51 +469,42 @@ figure.exhibit figcaption {
     color: var(--fg-dim);
 }
 
-/* Evidence Triptych */
+/* Method Steps */
 
-/* Render as three indented brew-style sub-blocks rather than a card grid —
- * keeps the page reading as continuous terminal output. */
+/* Numbered like the CLI's own `[1/5]` progress lines, one under the other,
+ * so the section reads as continuous terminal output. */
 .method-list {
-    margin: 0.6rem 0 0;
+    margin: 0.9rem 0 0;
     padding-left: 2.2em;
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 1.2rem;
 }
-@media (min-width: 760px) {
-    .method-list { grid-template-columns: repeat(3, 1fr); }
-}
-.method-list article {
-    border-left: 2px solid var(--prompt);
-    padding: 0.1rem 0 0.1rem 0.9rem;
-}
-.method-list article.err  { border-left-color: var(--err); }
-.method-list article.warn { border-left-color: var(--warn); }
-.method-list .file {
-    color: var(--fg-dim);
-    font-size: 11px;
-    margin-bottom: 0.2rem;
-}
+.method-list article + article { margin-top: 1.1rem; }
 .method-list h3 {
-    margin: 0 0 0.3rem;
+    margin: 0 0 0.25rem;
     color: var(--bold);
     font-weight: 700;
     font-size: 0.95rem;
 }
-.method-list p {
+.method-list h3 .n {
+    color: var(--fg-dim);
+    font-weight: 400;
+    margin-right: 0.6em;
+}
+.method-list p,
+.method-list .specimen {
     margin: 0;
-    color: var(--fg);
+    padding-left: 4.4em;
     font-size: 13px;
     line-height: 1.55;
 }
 .method-list .specimen {
-    margin-top: 0.55rem;
+    margin-top: 0.3rem;
     color: var(--fg-dim);
-    font-size: 11px;
-    border-top: 1px dashed var(--rule);
-    padding-top: 0.45rem;
 }
 .method-list .specimen .v { color: var(--link); }
+@media (max-width: 480px) {
+    .method-list p,
+    .method-list .specimen { padding-left: 0; }
+}
 
 /* Footer */
 
@@ -595,6 +552,9 @@ const ASCII_BANNER: &str = r#"   ██████╗██╗     ████
 
 const SITE_URL: &str = "https://clearhash.vercel.app";
 
+const DESCRIPTION: &str = "ClearHash rebuilds npm, PyPI and Cargo packages from their attested \
+    source commit and blocks the install if the result differs from what the registry serves.";
+
 fn layout(path: &str, title: &str, body: Markup) -> Markup {
     let url = format!("{SITE_URL}{path}");
     let card = format!("{SITE_URL}/assets/og.png");
@@ -605,11 +565,11 @@ fn layout(path: &str, title: &str, body: Markup) -> Markup {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { (title) }
-                meta name="description" content="ClearHash — rebuild every package, compare every byte, block every tamper. A supply-chain integrity verifier.";
+                meta name="description" content=(DESCRIPTION);
                 meta property="og:type" content="website";
                 meta property="og:site_name" content="ClearHash";
                 meta property="og:title" content=(title);
-                meta property="og:description" content="Rebuild every package. Compare every byte. Block every tamper.";
+                meta property="og:description" content=(DESCRIPTION);
                 meta property="og:url" content=(url);
                 meta property="og:image" content=(card);
                 meta property="og:image:width" content="1200";
@@ -636,13 +596,9 @@ fn layout(path: &str, title: &str, body: Markup) -> Markup {
                 header.bar {
                     div.wrap {
                         div.lhs {
-                            span.traffic { span {} span {} span {} }
-                            span.ses {
-                                b { "clearhash" }
-                                "@verifier — "
-                                "v0.1 · MIT · "
-                                span.prompt { "● ready" }
-                            }
+                            span.ses { b { "clearhash" } "@verifier" }
+                            span.dim { "v" (env!("CARGO_PKG_VERSION")) }
+                            span.dim { "MIT" }
                         }
                         nav {
                             a href="/inspect" { "inspect" }
@@ -655,11 +611,10 @@ fn layout(path: &str, title: &str, body: Markup) -> Markup {
                     div.wrap {
                         span {
                             span.arrow { "==>" }
-                            "Filed under supply-chain integrity. "
-                            span.dim { "MIT-licensed." }
+                            "ClearHash is MIT-licensed."
                         }
                         span.dim {
-                            "CLH-26 · "
+                            "source: "
                             a href="https://github.com/Builder106/clear-hash" { "github.com/Builder106/clear-hash" }
                         }
                     }
@@ -686,17 +641,17 @@ fn info_header() -> Markup {
         pre.banner aria-label="ClearHash" { (ASCII_BANNER) }
 
         p style="padding-left:0;margin:0.4rem 0 1.4rem;" class="dim" {
-            "supply-chain integrity verifier — rebuild every package, compare every byte, block every tamper."
+            "supply-chain integrity verifier for npm, PyPI and Cargo packages."
         }
 
         div.block {
             span.arrow { "==>" }
-            h2 { "clearhash info " span.sub { "· case CLH-26" } }
+            h2 { "clearhash info" }
             dl.info-strip {
-                dt { "classification" }   dd { "open · public · MIT" }
-                dt { "subject" }          dd { "Supply-chain integrity (npm · PyPI · Cargo)" }
-                dt { "method" }           dd { "rebuild ✕ compare against attested source commit" }
-                dt { "rate-limit" }       dd { "30 req/min global, /inspect endpoint" }
+                dt { "license" }      dd { "MIT" }
+                dt { "ecosystems" }   dd { "npm, PyPI, Cargo" }
+                dt { "method" }       dd { "rebuild from the attested source commit, then compare file trees" }
+                dt { "rate limit" }   dd { "30 inspects/min across the page and API, shared by all visitors" }
             }
         }
     }
@@ -705,7 +660,7 @@ fn info_header() -> Markup {
 pub async fn landing() -> Markup {
     layout(
         "/",
-        "ClearHash — supply-chain integrity verifier",
+        "ClearHash: supply-chain integrity verifier",
         html! {
             div.wrap {
                 (info_header())
@@ -713,8 +668,8 @@ pub async fn landing() -> Markup {
                 div.block.hero {
                     span.arrow { "==>" }
                     h2 {
-                        "Don't just check signatures. "
-                        strong { "Rebuild the source." }
+                        "Checks that a registry package is "
+                        strong { "what its source code builds" } "."
                     }
                     div.body {
                         p {
@@ -732,26 +687,27 @@ pub async fn landing() -> Markup {
 
                 div.block {
                     span.arrow { "==>" }
-                    h2 { "exhibit A " span.sub { "· live verify run · npm:sigstore@2.3.1" } }
+                    h2 { "demo " span.sub { "clearhash verify npm:sigstore@2.3.1" } }
                     div.body {
                         p {
-                            "Full pipeline in ~36 seconds (shown at 4× playback). The fetch, the "
-                            "attestation parse, the Docker rebuild, the tree-diff — every step in "
-                            "the recording, in order."
+                            "A recording of the full pipeline from an earlier release, which rebuilt "
+                            "online. The run took about 36 seconds; the GIF plays at 4× speed. The "
+                            "current release rebuilds offline and refuses this package because its "
+                            "pinned source has no dependency integrity hashes."
                         }
                     }
                     figure.exhibit {
                         div.frame {
                             div.titlebar {
-                                span.dots { span {} span {} span {} }
-                                span { "clearhash verify npm:sigstore@2.3.1" }
-                                span { "rec · 36s" }
+                                span { "$ clearhash verify npm:sigstore@2.3.1" }
+                                span { "36 s at 4× speed" }
                             }
-                            img src="/assets/demo-verify.gif" alt="verify demo";
+                            img src="/assets/demo-verify.gif"
+                                alt="Terminal recording of clearhash verify npm:sigstore@2.3.1 running all five steps and ending in MATCH";
                         }
                         figcaption {
-                            "The rebuild reproduces the registry artifact byte-for-byte. "
-                            span.ok { "MATCH" } " — tree-hash logged."
+                            "The rebuilt file tree hashed the same as the registry tarball's, so the run ended in "
+                            span.ok { "MATCH" } "."
                         }
                     }
 
@@ -770,52 +726,48 @@ pub async fn landing() -> Markup {
 
                 div.block {
                     span.arrow { "==>" }
-                    h2 { "method of examination " span.sub { "· what it catches, and how" } }
+                    h2 { "what it catches, and how" }
                     div.body {
                         p {
-                            "The supply-chain attacks of the last five years (event-stream, ua-parser-js, "
-                            "the post-install crypto-wallet stealers, xz-utils) all share one shape: "
-                            "the registry tarball diverges from the source repo. Existing tools verify "
-                            span.bold { "who " } "signed the tarball, or that the tarball matches itself "
-                            "across mirrors — but not whether the tarball is what the source code would "
-                            "produce. ClearHash does the rebuild and the comparison."
+                            "In event-stream, ua-parser-js, xz-utils and the post-install wallet "
+                            "stealers, the published tarball held code the source repo did not. A "
+                            "signature tells you who published a tarball, and a transparency log tells "
+                            "you every mirror serves the same one. Neither tells you whether the "
+                            "tarball is what the source would build. ClearHash rebuilds it and compares."
                         }
                     }
                     div.method-list {
                         article {
-                            div.file { "step 1/3" }
-                            h3 { "Sigstore + Rekor" }
+                            h3 { span.n { "[1/3]" } "Sigstore + Rekor" }
                             p {
-                                "Verifies the SLSA attestation envelope, extracts the Fulcio-issued "
-                                "leaf cert, cross-checks the workflow URI against the attested source "
-                                "repo, and confirms a Rekor transparency-log entry."
+                                "Checks the Fulcio certificate's issuer identity, verifies the DSSE "
+                                "signature, authenticates the Rekor checkpoint and Merkle inclusion "
+                                "proof, and confirms the workflow URI names the source repo."
                             }
                             div.specimen {
-                                "rekor_log_index → " span.v { "94,408,136" }
+                                "rekor_log_index: " span.v { "94408136" }
                             }
                         }
                         article {
-                            div.file { "step 2/3" }
-                            h3 { "Real rebuild" }
+                            h3 { span.n { "[2/3]" } "Rebuild" }
                             p {
-                                "Clones the attested commit, pins HEAD, runs the ecosystem's build "
-                                "script (npm ci + npm pack) in a Docker container — with "
-                                code.inl { "--ignore-scripts" } " to block lifecycle hooks."
+                                "Clones the source repo, checks out the attested commit, and builds the "
+                                "package in a pinned Docker image. npm builds run with "
+                                code.inl { "--ignore-scripts" } ", so lifecycle hooks never execute."
                             }
                             div.specimen {
-                                "commit_sha → " span.v { "46e7056ff991…" }
+                                "commit_sha: " span.v { "46e7056ff991…" }
                             }
                         }
-                        article.err {
-                            div.file { "step 3/3" }
-                            h3 { "File-tree compare" }
+                        article {
+                            h3 { span.n { "[3/3]" } "File-tree compare" }
                             p {
-                                "Normalises both archives (strips mtimes, scrubs npm-injected "
-                                "metadata), Merkle-hashes the file trees, and surfaces per-file diffs "
-                                "on mismatch."
+                                "Extracts both archives, drops the metadata the registry adds, and "
+                                "compares Merkle-hashed file trees. A match exits 0; a mismatch exits 1 "
+                                "with a per-file diff."
                             }
                             div.specimen {
-                                "tree_hash → " span.v { "ec714016d7e4ce74…" }
+                                "tree_hash: " span.v { "ec714016d7e4ce74…" }
                             }
                         }
                     }
@@ -826,25 +778,25 @@ pub async fn landing() -> Markup {
                     h2 { "install the CLI" }
                     div.body {
                         p {
-                            "The full verify pipeline needs a running Docker daemon (Docker Desktop or "
-                            "OrbStack on macOS). The "
+                            "Needs Rust 1.88+ and a running Docker daemon (Docker Desktop or OrbStack "
+                            "on macOS). The "
                             a href="/inspect" { code.inl { "/inspect" } }
-                            " endpoint on this site runs the fetch + attestation parse parts without Docker."
+                            " page on this site skips the rebuild, so it needs neither."
                         }
                     }
                     pre.log style="padding-left:2.2em;" {
         "  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">git</span> clone https://github.com/Builder106/clear-hash.git\n"))
-        "  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">cd</span> ClearHash\n"))
+        "  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">cd</span> clear-hash\n"))
         "  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">cargo</span> install --path crates/clearhash-cli\n\n"))
-        "  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">clearhash</span> verify <span class=\"link\">npm:sigstore@2.3.1</span>"))
+        "  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">clearhash</span> inspect <span class=\"link\">npm:sigstore@2.3.1</span>"))
                     }
                 }
 
                 div.block {
                     span.arrow { "==>" }
-                    h2 { "API " span.sub { "· programmatic specimen request" } }
+                    h2 { "API" }
                     div.body {
-                        p { "Programmatic access to the inspect endpoint:" }
+                        p { "The inspect endpoint also returns JSON:" }
                     }
                     pre.log style="padding-left:2.2em;" {
         "  " (PreEscaped("<span class=\"dim\">$</span> <span class=\"bold\">curl</span> '<span class=\"link\">https://clearhash.vercel.app/api/inspect?package=npm:sigstore@2.3.1</span>'\n"))
@@ -877,18 +829,18 @@ pub async fn landing() -> Markup {
 pub fn inspect_empty() -> Markup {
     layout(
         "/inspect",
-        "ClearHash · inspect",
+        "Inspect a package | ClearHash",
         html! {
             div.wrap {
                 (info_header())
 
                 div.block {
                     span.arrow { "==>" }
-                    h2 { "inspect a package " span.sub { "· no rebuild, attestation parse only" } }
+                    h2 { "inspect a package " span.sub { "attestation only, no rebuild" } }
                     div.body {
                         p {
-                            "Fetches the artifact, parses its SLSA attestation, validates the certificate "
-                            "chain. Use the CLI for the full byte-by-byte verify."
+                            "Fetches the artifact, parses its SLSA attestation and validates the "
+                            "certificate chain. The rebuild and file-tree comparison run only in the CLI."
                         }
                     }
                     (inspect_form(""))
@@ -905,7 +857,7 @@ pub fn inspect_result(package: &str, result: &InspectResult) -> Markup {
             "ok",
             "[ OK ]",
             "attestation verified",
-            "Fulcio leaf cert · Rekor transparency-log entry · workflow URI cross-checked against source repo.",
+            "Checked the Fulcio leaf certificate and the Rekor log entry, and matched the workflow URI to the source repo.",
         ),
         None => (
             "warn",
@@ -927,7 +879,7 @@ pub fn inspect_result(package: &str, result: &InspectResult) -> Markup {
 
     layout(
         "/inspect",
-        &format!("ClearHash · {}", result.package),
+        &format!("{} | ClearHash", result.package),
         html! {
             div.wrap {
                 (info_header())
@@ -974,7 +926,7 @@ pub fn inspect_result(package: &str, result: &InspectResult) -> Markup {
 
                     p style="padding-left:0;margin-top:1rem;font-size:12px;" class="dim" {
                         span.arrow { "==>" }
-                        " json · "
+                        " as JSON: "
                         code.inl { "GET /api/inspect?package=" (package) }
                     }
                 }
@@ -986,7 +938,7 @@ pub fn inspect_result(package: &str, result: &InspectResult) -> Markup {
 pub fn inspect_error(package: &str, err: &InspectError) -> Markup {
     layout(
         "/inspect",
-        "ClearHash · error",
+        "Inspect failed | ClearHash",
         html! {
             div.wrap {
                 (info_header())
@@ -999,7 +951,7 @@ pub fn inspect_error(package: &str, err: &InspectError) -> Markup {
 
                     div.verdict.err {
                         span.tag { "[FAIL]" }
-                        span.ttl { "specimen rejected (" (err.status) ")" }
+                        span.ttl { "inspect failed (" (err.status) ")" }
                         span.sub { (err.message) }
                     }
 
@@ -1018,7 +970,7 @@ fn inspect_form(prefill: &str) -> Markup {
     html! {
         form.prompt-form method="get" action="/inspect" {
             span.ps { "$" }
-            span.cmd { "clearhash verify" }
+            span.cmd { "clearhash inspect" }
             input
                 type="text"
                 name="package"
