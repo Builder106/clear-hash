@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use clearhash_core::{Ecosystem, PackageRef, VerifyOutcome};
+use clearhash_ecosystems::js_locks::{self, Manager};
 use clearhash_ecosystems::{for_ecosystem, EcosystemAdapter};
 use clearhash_registry::{FetchError, FetchedArtifact};
 use clearhash_sandbox::{ContainerJob, RebuildOptions, RebuildSource, SandboxError};
@@ -493,6 +494,13 @@ async fn run_arm(
         memory_bytes: Some(MEMORY_BYTES),
         ..Default::default()
     };
+    // Every arm runs the same package-manager release, fetched with the network on.
+    adapter
+        .build_tools(&source_dir)
+        .map_err(|e| Failure::new(Stage::Lock, e))?;
+    options.tools = clearhash_sandbox::prepare_tools(adapter, &source_dir, dir)
+        .await
+        .map_err(|e| sandbox(Stage::Dependencies, e))?;
     let mut lock_source = None;
     match arm {
         Arm::H => options.dependencies = offline(adapter, &source_dir, dir).await?,
@@ -504,7 +512,11 @@ async fn run_arm(
         }
         Arm::I => {
             let committed = adapter.offline_dependencies(&source_dir).is_ok();
-            if !committed {
+            // Only npm locks are inferred. A rejected pnpm or Yarn lock is the project's
+            // chosen dependency set; arm I records the same lock failure as arm H.
+            let foreign = pkg.ecosystem == Ecosystem::Npm
+                && !matches!(js_locks::manager(&source_dir), Some(Manager::Npm) | None);
+            if !committed && !foreign {
                 resolve(adapter, pkg.ecosystem, &source_dir, release).await?;
             }
             lock_source = Some(if committed { "committed" } else { "inferred" }.to_string());
