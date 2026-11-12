@@ -22,7 +22,8 @@ pub mod simulate_tamper;
 
 use bollard::models::{ContainerCreateBody, HostConfig};
 use bollard::query_parameters::{
-    CreateContainerOptions, CreateImageOptions, LogsOptions, WaitContainerOptions,
+    CreateContainerOptions, CreateImageOptions, LogsOptions, RemoveContainerOptions,
+    WaitContainerOptions,
 };
 use bollard::Docker;
 use clearhash_core::{tree, FileTreeHash, PackageRef, ProvenanceClaim, VerifyOutcome};
@@ -49,6 +50,8 @@ pub enum SandboxError {
     RebuildFailed(i64, String),
     #[error("checked-out HEAD ({actual}) does not match pinned commit ({expected})")]
     CommitDrift { expected: String, actual: String },
+    #[error("container exceeded the {0:?} time limit")]
+    Timeout(Duration),
 }
 
 // Tarball extraction and tree-hashing (used by both registry-side and rebuild-side trees).
@@ -155,6 +158,30 @@ impl From<&ProvenanceClaim> for RebuildSource {
     }
 }
 
+/// Settings beyond the verifier defaults. The verifier uses `RebuildOptions::default()`
+/// plus its host-verified dependency cache; only measurement code sets the rest.
+#[derive(Debug, Default)]
+pub struct RebuildOptions {
+    /// Host-verified archives mounted read-only at `/deps`. Their presence disables networking.
+    pub dependencies: Option<PathBuf>,
+    /// Extra `KEY=value` entries for the container environment.
+    pub env: Vec<String>,
+    pub timeout: Option<Duration>,
+    /// Container memory limit in bytes. `None` keeps Docker's default.
+    pub memory_bytes: Option<i64>,
+}
+
+/// One script run in a fresh container with `source_dir` bind-mounted at `/src`.
+pub struct ContainerJob<'a> {
+    pub image: &'a str,
+    pub platform: Option<&'a str>,
+    pub script: String,
+    pub source_dir: &'a Path,
+    pub options: &'a RebuildOptions,
+    /// Container directory copied to this host directory after a successful run.
+    pub collect: Option<(&'a str, &'a Path)>,
+}
+
 pub async fn rebuild(
     adapter: &dyn EcosystemAdapter,
     source: &RebuildSource,
@@ -162,44 +189,107 @@ pub async fn rebuild(
     workdir: &Path,
 ) -> Result<RebuildOutcome, SandboxError> {
     let source_dir = workdir.join("source");
-    let output_dir = workdir.join("rebuilt");
     std::fs::create_dir_all(&source_dir)?;
-    std::fs::create_dir_all(&output_dir)?;
-
     clone_and_pin(&source.source_repo, &source.commit_sha, &source_dir).await?;
+    let options = RebuildOptions {
+        dependencies: prepare_offline(adapter, &source_dir, workdir).await?,
+        ..Default::default()
+    };
+    rebuild_checked_out(adapter, source, pkg, workdir, &options).await
+}
 
-    let dependencies = offline::prepare(adapter, &source_dir, workdir).await?;
+/// Fetch and hash-verify the adapter's locked dependency closure into `workdir/dependencies`.
+/// Returns `None` when the adapter keeps its own network policy (Cargo).
+pub async fn prepare_offline(
+    adapter: &dyn EcosystemAdapter,
+    source_dir: &Path,
+    workdir: &Path,
+) -> Result<Option<PathBuf>, SandboxError> {
+    offline::prepare(adapter, source_dir, workdir).await
+}
 
-    let docker = Docker::connect_with_local_defaults()?;
-    pull_image(&docker, adapter.rebuild_image(), adapter.rebuild_platform()).await?;
-
-    let container_id = create_and_run(
-        &docker,
-        adapter,
-        source,
-        pkg,
-        &source_dir,
-        dependencies.as_deref(),
-    )
+/// Rebuild from a tree already pinned at `workdir/source`; the artifact lands in `workdir/rebuilt`.
+pub async fn rebuild_checked_out(
+    adapter: &dyn EcosystemAdapter,
+    source: &RebuildSource,
+    pkg: &PackageRef,
+    workdir: &Path,
+    options: &RebuildOptions,
+) -> Result<RebuildOutcome, SandboxError> {
+    let output_dir = workdir.join("rebuilt");
+    std::fs::create_dir_all(&output_dir)?;
+    run_job(ContainerJob {
+        image: adapter.rebuild_image(),
+        platform: adapter.rebuild_platform(),
+        script: rebuild_script(adapter, source, pkg),
+        source_dir: &workdir.join("source"),
+        options: &RebuildOptions {
+            env: [package_env(pkg), options.env.clone()].concat(),
+            dependencies: options.dependencies.clone(),
+            ..*options
+        },
+        collect: Some((adapter.built_artifact_dir(), &output_dir)),
+    })
     .await?;
-    let logs_tail = wait_and_collect_logs(&docker, &container_id).await?;
-    let exit_code = container_exit_code(&docker, &container_id).await?;
-    if exit_code != 0 {
-        let _ = docker.remove_container(&container_id, None).await;
-        return Err(SandboxError::RebuildFailed(exit_code, logs_tail));
-    }
-
-    download_artifacts(
-        &docker,
-        &container_id,
-        adapter.built_artifact_dir(),
-        &output_dir,
-    )
-    .await?;
-    let _ = docker.remove_container(&container_id, None).await;
-
     let artifact_path = pick_artifact(&output_dir)?;
     Ok(RebuildOutcome { artifact_path })
+}
+
+/// Local image ID (content digest) for a pulled image tag.
+pub async fn image_id(image: &str) -> Result<Option<String>, SandboxError> {
+    let docker = Docker::connect_with_local_defaults()?;
+    Ok(docker.inspect_image(image).await?.id)
+}
+
+/// Run one container job. The container is removed on every exit path, including timeouts.
+pub async fn run_job(job: ContainerJob<'_>) -> Result<(), SandboxError> {
+    let docker = Docker::connect_with_local_defaults()?;
+    pull_image(&docker, job.image, job.platform).await?;
+    let id = start_container(&docker, &job).await?;
+    let result = finish_job(&docker, &id, &job).await;
+    let remove = RemoveContainerOptions {
+        force: true,
+        ..Default::default()
+    };
+    let _ = docker.remove_container(&id, Some(remove)).await;
+    result
+}
+
+async fn finish_job(docker: &Docker, id: &str, job: &ContainerJob<'_>) -> Result<(), SandboxError> {
+    let logs = match job.options.timeout {
+        Some(limit) => tokio::time::timeout(limit, wait_and_collect_logs(docker, id))
+            .await
+            .map_err(|_| SandboxError::Timeout(limit))??,
+        None => wait_and_collect_logs(docker, id).await?,
+    };
+    let exit_code = container_exit_code(docker, id).await?;
+    if exit_code != 0 {
+        return Err(SandboxError::RebuildFailed(exit_code, logs));
+    }
+    if let Some((from, to)) = job.collect {
+        download_artifacts(docker, id, from, to).await?;
+    }
+    Ok(())
+}
+
+fn rebuild_script(
+    adapter: &dyn EcosystemAdapter,
+    source: &RebuildSource,
+    pkg: &PackageRef,
+) -> String {
+    adapter
+        .rebuild_script()
+        .replace("{COMMIT_SHA}", &source.commit_sha)
+        .replace("{REPO_URL}", &source.source_repo)
+        .replace("{PKG_NAME}", &pkg.name)
+        .replace("{PKG_VERSION}", &pkg.version)
+}
+
+fn package_env(pkg: &PackageRef) -> Vec<String> {
+    vec![
+        format!("PKG_NAME={}", pkg.name),
+        format!("PKG_VERSION={}", pkg.version),
+    ]
 }
 
 fn clean_git_url(repo: &str) -> &str {
@@ -213,7 +303,8 @@ fn clean_git_url(repo: &str) -> &str {
     }
 }
 
-async fn clone_and_pin(repo: &str, commit: &str, dest: &Path) -> Result<(), SandboxError> {
+/// Clone `repo` into `dest`, check out `commit` detached, and confirm `HEAD` matches it.
+pub async fn clone_and_pin(repo: &str, commit: &str, dest: &Path) -> Result<(), SandboxError> {
     // Strip `git+` prefix and trailing ref to feed `git clone`.
     let clean_url = clean_git_url(repo);
 
@@ -294,6 +385,7 @@ async fn pull_image(
     Ok(())
 }
 
+#[cfg(test)]
 async fn create_and_run(
     docker: &Docker,
     adapter: &dyn EcosystemAdapter,
@@ -302,15 +394,26 @@ async fn create_and_run(
     source_dir: &Path,
     dependencies: Option<&Path>,
 ) -> Result<String, SandboxError> {
-    let script = adapter
-        .rebuild_script()
-        .replace("{COMMIT_SHA}", &source.commit_sha)
-        .replace("{REPO_URL}", &source.source_repo)
-        .replace("{PKG_NAME}", &pkg.name)
-        .replace("{PKG_VERSION}", &pkg.version);
+    let options = RebuildOptions {
+        dependencies: dependencies.map(Path::to_path_buf),
+        env: package_env(pkg),
+        ..Default::default()
+    };
+    let job = ContainerJob {
+        image: adapter.rebuild_image(),
+        platform: adapter.rebuild_platform(),
+        script: rebuild_script(adapter, source, pkg),
+        source_dir,
+        options: &options,
+        collect: None,
+    };
+    start_container(docker, &job).await
+}
 
-    let source_abs = std::fs::canonicalize(source_dir)?;
+async fn start_container(docker: &Docker, job: &ContainerJob<'_>) -> Result<String, SandboxError> {
+    let source_abs = std::fs::canonicalize(job.source_dir)?;
     let mut binds = vec![format!("{}:/src", source_abs.display())];
+    let dependencies = job.options.dependencies.as_deref();
     if let Some(dependencies) = dependencies {
         binds.push(format!(
             "{}:/deps:ro",
@@ -319,26 +422,24 @@ async fn create_and_run(
     }
 
     let config: ContainerCreateBody = ContainerCreateBody {
-        image: Some(adapter.rebuild_image().to_string()),
-        cmd: Some(vec!["/bin/sh".into(), "-c".into(), script]),
+        image: Some(job.image.to_string()),
+        cmd: Some(vec!["/bin/sh".into(), "-c".into(), job.script.clone()]),
         working_dir: Some("/src".into()),
-        env: Some(vec![
-            format!("PKG_NAME={}", pkg.name),
-            format!("PKG_VERSION={}", pkg.version),
-        ]),
+        env: Some(job.options.env.clone()),
         host_config: Some(HostConfig {
             binds: Some(binds),
             network_mode: dependencies.map(|_| "none".to_string()),
             auto_remove: Some(false),
+            memory: job.options.memory_bytes,
             ..Default::default()
         }),
         ..Default::default()
     };
 
-    let name = format!("clearhash-rebuild-{}", &source.commit_sha[..12]);
+    // Docker assigns a unique name, so concurrent rebuilds of one commit never collide.
     let opts = CreateContainerOptions {
-        name: Some(name.clone()),
-        platform: adapter.rebuild_platform().unwrap_or_default().to_string(),
+        name: None,
+        platform: job.platform.unwrap_or_default().to_string(),
     };
     let created = docker.create_container(Some(opts), config).await?;
     docker.start_container(&created.id, None).await?;
@@ -1032,6 +1133,39 @@ else:
 
         let outcome = compare_trees(&*adapter, &r1, &r2).unwrap();
         assert!(matches!(outcome, VerifyOutcome::Match { .. }));
+    }
+
+    #[tokio::test]
+    async fn container_jobs_stop_at_the_time_limit() {
+        if !docker_reachable().await {
+            eprintln!("skipping container timeout: Docker daemon unreachable");
+            return;
+        }
+        let adapter = for_ecosystem(clearhash_core::Ecosystem::Npm);
+        let docker = Docker::connect_with_local_defaults().unwrap();
+        pull_image(&docker, adapter.rebuild_image(), None)
+            .await
+            .unwrap();
+        let source = tempfile::tempdir().unwrap();
+        let options = RebuildOptions {
+            timeout: Some(Duration::from_secs(3)),
+            ..Default::default()
+        };
+        let started = std::time::Instant::now();
+        let result = run_job(ContainerJob {
+            image: adapter.rebuild_image(),
+            platform: None,
+            script: "sleep 120".into(),
+            source_dir: source.path(),
+            options: &options,
+            collect: None,
+        })
+        .await;
+        assert!(
+            matches!(result, Err(SandboxError::Timeout(_))),
+            "{result:?}"
+        );
+        assert!(started.elapsed() < Duration::from_secs(60));
     }
 
     #[test]
