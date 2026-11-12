@@ -151,6 +151,29 @@ string (`clearhash-hv-pilot`) to debug the tooling. Pilot results are not
 findings. The paper reports that a pilot ran and which tool changes it caused.
 Freeze the ClearHash commit after the pilot.
 
+## Package-manager scope (added 2026-11-12, before any count)
+
+The recipe installs npm dependencies with npm only, in every arm. The pilot
+showed pnpm projects failing in all three arms. Adding pnpm or Yarn to arms N
+and I alone would make the H-to-N gap measure package-manager support as well
+as the network, so that option is ruled out. The remaining choice is between
+npm only in all arms and pnpm and Yarn support in all arms, which means
+extending the verifier. It is made from the input mix, never from outcomes:
+
+1. Draw the first 100 npm releases in the pilot order (`clearhash-hv-pilot`).
+2. For each attested commit, list the repository root and record which of
+   `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`,
+   `bun.lock`, and `bun.lockb` it contains. Releases whose root cannot be
+   listed are counted as unknown and left out of the denominator.
+3. A release needs pnpm or Yarn when its root has `pnpm-lock.yaml` or
+   `yarn.lock` and has neither npm lockfile.
+4. If at least 25% of listed releases need pnpm or Yarn, extend ClearHash to
+   install from hash-pinned pnpm and Yarn locks with the network off, and use
+   that support in all three arms. Otherwise keep npm only and report the
+   share as a limitation.
+
+The lockfile mix is reported as a descriptive result either way.
+
 ## Outcomes
 
 For each release and arm, record the first failing stage: attestation,
