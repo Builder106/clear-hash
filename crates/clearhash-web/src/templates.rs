@@ -574,7 +574,7 @@ fn layout(path: &str, title: &str, body: Markup) -> Markup {
                 meta property="og:image" content=(card);
                 meta property="og:image:width" content="1200";
                 meta property="og:image:height" content="630";
-                meta property="og:image:alt" content="ClearHash shield mark beside the line: Rebuild every package. Compare every byte. Block every tamper.";
+                meta property="og:image:alt" content="ClearHash shield mark beside the line: Checks that a registry package is what its source code builds.";
                 meta name="twitter:card" content="summary_large_image";
                 meta name="twitter:image" content=(card);
                 meta name="theme-color" content="#0a0e0a";
