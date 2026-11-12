@@ -43,7 +43,7 @@ url = { workspace = true }
 hex = { workspace = true }
 
 [dev-dependencies]
-base64 = "0.22"
+base64 = "0.23"
 sha2 = { workspace = true }
 flate2 = { workspace = true }
 tar = { workspace = true }
