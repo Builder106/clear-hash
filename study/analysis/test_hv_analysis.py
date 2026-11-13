@@ -100,6 +100,24 @@ class Analysis(unittest.TestCase):
         self.assertEqual(npm["arms"]["h"]["t1_matches"], 1)
         self.assertEqual(npm["arm_i_lock_source"], {"committed": 1})
 
+    def test_rerun_ledgers_replace_every_arm_in_order(self):
+        sample = [fixture_release("NPM", "a", "https://github.com/x/a"),
+                  fixture_release("NPM", "b", "https://github.com/x/b")]
+        main = [record("NPM", name, arm, "source") for name in "ab" for arm in "hni"]
+        # Fixture retry: "a" now builds in every arm; "b" fails at source again.
+        retry = [record("NPM", "a", arm, "compared", t1=arm != "h") for arm in "hni"]
+        retry += [record("NPM", "b", arm, "source") for arm in "hni"]
+        # Fixture pin rerun: only "b", which now reaches the lock stage in arm H.
+        pin = [record("NPM", "b", "h", "lock"), record("NPM", "b", "n", "compared", t1=True),
+               record("NPM", "b", "i", "lock")]
+        results = hv.analyse(sample, main, reruns=[retry, pin])
+        npm = results["ecosystems"]["NPM"]
+        self.assertEqual(results["rerun_releases"], [["NPM:a@1.0.0", "NPM:b@1.0.0"], ["NPM:b@1.0.0"]])
+        self.assertEqual(npm["arms"]["h"]["stages"], {"compared": 1, "lock": 1})
+        self.assertEqual(npm["arms"]["n"]["t1_matches"], 2)
+        self.assertEqual(npm["primary_n_minus_h"]["table"],
+                         {"both": 0, "only_n": 2, "only_h": 0, "neither": 0})
+
     def test_degenerate_ecosystems_are_descriptive_and_holm_covers_the_rest(self):
         sample, ledger = [], []
         # NPM fixture: 12 releases match in every arm, 8 match only with the network.

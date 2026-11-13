@@ -12,11 +12,16 @@ Reads the study sample and ledger and reports, per ecosystem:
   repository in draw order);
 - stage outcomes per arm and arm I lock sources.
 
+Rerun ledgers (the plan's source retry and pinned-release rerun) are given in
+the order they were applied. A release that appears in one has all its arms
+replaced by the rerun's records, whatever the outcome.
+
 Standard library only, so the analysis has nothing to install.
 
 Usage:
     python hv_analysis.py --sample SAMPLE.jsonl --ledger LEDGER.jsonl \
-        [--screened PYPI-SCREENED.jsonl] [--out RESULTS.json]
+        [--rerun RERUN.jsonl ...] [--screened PYPI-SCREENED.jsonl] \
+        [--out RESULTS.json]
 """
 
 import argparse
@@ -103,14 +108,28 @@ def repository(url):
     return re.sub(r"\.git$", "", url)
 
 
-def final_records(ledger):
+def final_records(ledger, reruns=()):
     """Last record per (system, name, version, arm). The driver appends a new
-    record when it reruns an infrastructure failure, so the last one counts."""
-    final = {}
-    for record in ledger:
-        key = (record["system"], record["name"], record["version"], record["arm"])
-        final[key] = record
-    return final
+    record when it reruns an infrastructure failure, so the last one counts.
+
+    Each rerun ledger then replaces every arm of each release it contains.
+    Returns the records and, per rerun ledger, the releases it replaced.
+    """
+    def latest(records):
+        out = {}
+        for record in records:
+            out[(record["system"], record["name"], record["version"], record["arm"])] = record
+        return out
+
+    final = latest(ledger)
+    replaced = []
+    for rerun in reruns:
+        newer = latest(rerun)
+        releases = {key[:3] for key in newer}
+        final = {key: r for key, r in final.items() if key[:3] not in releases}
+        final.update(newer)
+        replaced.append(sorted(f"{system}:{name}@{version}" for system, name, version in releases))
+    return final, replaced
 
 
 def matched(record, level):
@@ -164,9 +183,9 @@ def cluster_bootstrap(rows, keys, first, second):
     return {"repositories": len(groups), "resamples": BOOTSTRAP_RESAMPLES, "ci95": [low, high]}
 
 
-def analyse(sample, ledger, screened=None):
-    final = final_records(ledger)
-    results = {"ecosystems": {}, "missing": {}}
+def analyse(sample, ledger, screened=None, reruns=()):
+    final, replaced = final_records(ledger, reruns)
+    results = {"ecosystems": {}, "missing": {}, "rerun_releases": replaced}
     tested = []
     for system in sorted({r["system"] for r in sample}):
         releases = [r for r in sample if r["system"] == system]
@@ -260,6 +279,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--sample", required=True)
     parser.add_argument("--ledger", required=True)
+    parser.add_argument("--rerun", action="append", default=[],
+                        help="rerun ledger, in the order applied; repeatable")
     parser.add_argument("--screened")
     parser.add_argument("--out")
     args = parser.parse_args(argv)
@@ -267,6 +288,7 @@ def main(argv=None):
         read_jsonl(args.sample),
         read_jsonl(args.ledger),
         read_jsonl(args.screened) if args.screened else None,
+        [read_jsonl(path) for path in args.rerun],
     )
     if args.out:
         with open(args.out, "w") as handle:
