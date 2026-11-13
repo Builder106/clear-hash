@@ -1131,7 +1131,7 @@ NAPI_MODULE(NODE_GYP_MODULE_NAME, init)
     }
 
     #[tokio::test]
-    async fn pypi_offline_build_uses_locked_wheels_and_fails_on_missing_backend() {
+    async fn pypi_offline_build_finds_the_project_and_uses_locked_wheels() {
         if !docker_reachable().await {
             eprintln!("skipping offline PyPI rebuild: Docker daemon unreachable");
             return;
@@ -1143,8 +1143,16 @@ NAPI_MODULE(NODE_GYP_MODULE_NAME, init)
             include_str!("../tests/fixtures/pylock.toml"),
         )
         .unwrap();
+        // A monorepo: the root names another project, so building it would fail.
         std::fs::write(
             repo.path().join("pyproject.toml"),
+            "[project]\nname = \"workspace-root\"\nversion = \"0.0.0\"\n",
+        )
+        .unwrap();
+        let project = repo.path().join("packages/offline_fixture");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(
+            project.join("pyproject.toml"),
             r#"
 [build-system]
 requires = ["setuptools==75.8.0"]
@@ -1157,7 +1165,7 @@ version = "1.0.0"
         )
         .unwrap();
         std::fs::write(
-            repo.path().join("backend.py"),
+            project.join("backend.py"),
             r#"
 import socket
 from setuptools.build_meta import *

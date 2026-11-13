@@ -13,6 +13,10 @@ use x509_parser::prelude::*;
 
 use crate::{AdapterError, EcosystemAdapter, ReleaseUrls};
 
+/// Shell fragment that enters the directory of the project naming `PKG_NAME`.
+/// Shared with the study's PyPI resolver so both build the same project.
+pub const LOCATE_PROJECT: &str = include_str!("pypi-locate.sh");
+
 pub struct PypiAdapter;
 
 #[async_trait]
@@ -239,12 +243,15 @@ impl EcosystemAdapter for PypiAdapter {
     }
 
     fn rebuild_script(&self) -> &'static str {
-        r#"set -eu
+        concat!(
+            r#"set -eu
 mkdir -p /out
 cd /src
 export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct {COMMIT_SHA} 2>/dev/null || echo 0)"
 export TZ=UTC
-export PIP_CONFIG_FILE=/dev/null
+"#,
+            include_str!("pypi-locate.sh"),
+            r#"export PIP_CONFIG_FILE=/dev/null
 export PIP_DISABLE_PIP_VERSION_CHECK=1
 python -m venv /tmp/clearhash-python
 if [ "${CLEARHASH_DEPENDENCY_MODE:-offline}" = network ]; then
@@ -261,6 +268,7 @@ fi
 /tmp/clearhash-python/bin/python -m pip install --quiet build
 /tmp/clearhash-python/bin/python -m build --sdist --outdir /out
 "#
+        )
     }
 
     fn offline_dependencies(

@@ -3,6 +3,7 @@ set -eu
 # the offline sdist build needs: `build` and its dependencies, then the backend's
 # static and dynamic sdist requirements. All resolved as of the publish time.
 cd /src
+# {LOCATE_PROJECT}
 export PIP_CONFIG_FILE=/dev/null
 export PIP_DISABLE_PIP_VERSION_CHECK=1
 python -m venv /tmp/clearhash-resolver
@@ -66,6 +67,7 @@ for url, (name, ver, digest) in sorted(locked.items()):
         "[packages.wheels.hashes]",
         f"sha256 = {json.dumps(digest)}",
     ]
-with open("pylock.toml", "w") as handle:
+# The host reads the lock at the source root, wherever the project is.
+with open("/src/pylock.toml", "w") as handle:
     handle.write("\n".join(lines) + "\n")
 PY

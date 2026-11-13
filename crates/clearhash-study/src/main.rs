@@ -576,12 +576,19 @@ async fn resolve(
     release: &Release,
 ) -> Result<(), Failure> {
     let script = match ecosystem {
-        Ecosystem::Npm => include_str!("resolve-npm.sh"),
-        Ecosystem::Pypi => include_str!("resolve-pypi.sh"),
+        Ecosystem::Npm => include_str!("resolve-npm.sh").to_string(),
+        Ecosystem::Pypi => include_str!("resolve-pypi.sh").replace(
+            "# {LOCATE_PROJECT}\n",
+            clearhash_ecosystems::pypi::LOCATE_PROJECT,
+        ),
         Ecosystem::Cargo => return Err(Failure::new(Stage::Lock, "no Cargo resolver")),
     };
     let options = RebuildOptions {
-        env: vec![format!("CLEARHASH_RESOLVE_BEFORE={}", release.published_at)],
+        env: vec![
+            format!("CLEARHASH_RESOLVE_BEFORE={}", release.published_at),
+            format!("PKG_NAME={}", release.name),
+            format!("PKG_VERSION={}", release.version),
+        ],
         timeout: Some(TIME_LIMIT),
         memory_bytes: Some(MEMORY_BYTES),
         ..Default::default()
@@ -589,7 +596,7 @@ async fn resolve(
     clearhash_sandbox::run_job(ContainerJob {
         image: adapter.rebuild_image(),
         platform: adapter.rebuild_platform(),
-        script: script.into(),
+        script,
         source_dir,
         options: &options,
         collect: None,
