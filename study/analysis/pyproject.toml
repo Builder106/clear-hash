@@ -1,0 +1,6 @@
+[project]
+name = "hv-analysis"
+version = "0.1.0"
+description = "Statistics for the network-off verifiability study"
+requires-python = "==3.12.*"
+dependencies = []
