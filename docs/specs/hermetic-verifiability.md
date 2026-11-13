@@ -337,6 +337,19 @@ before the main run.
    fetch; the build installs from `/deps` and never reads it.
 
 Statistics run in a small locked Python environment under `study/analysis/`.
+It uses the standard library only, pinned to Python 3.12, and its tests check
+the Wilson, exact McNemar, and Holm results against R 4.6.1 and the Newcombe
+interval against a separate R implementation. Details fixed before any
+main-run result (2026-11-13):
+
+- The last ledger record per release and arm counts, because the driver
+  appends a new record when it reruns an infrastructure failure. A release
+  whose final record in any arm is still `infrastructure` is reported as
+  missing and left out of every rate.
+- The cluster bootstrap resamples repositories 4,000 times with the seed
+  string `clearhash-hv-2026-11` and reports the 2.5th and 97.5th
+  percentiles. Repositories are keyed by the sample's source URL, lower
+  case, without `git+`, `.git`, or a trailing ref.
 
 ## What the paper will claim
 
