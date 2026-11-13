@@ -464,7 +464,8 @@ async fn mirror_source(prepared: &Prepared, release_dir: &Path) -> Result<PathBu
     let _ = std::fs::remove_dir_all(&mirror);
     std::fs::create_dir_all(&mirror).map_err(|e| Failure::new(Stage::Infrastructure, e))?;
     let source = &prepared.source;
-    clearhash_sandbox::clone_and_pin(&source.source_repo, &source.commit_sha, &mirror)
+    // Objects only: each arm checks out its own working tree from this copy.
+    clearhash_sandbox::fetch_pinned(&source.source_repo, &source.commit_sha, &mirror)
         .await
         .map_err(|e| sandbox(Stage::Source, e))?;
     Ok(mirror)

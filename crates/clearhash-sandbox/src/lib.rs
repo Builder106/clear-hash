@@ -377,45 +377,63 @@ fn clean_git_url(repo: &str) -> &str {
     }
 }
 
-/// Clone `repo` into `dest`, check out `commit` detached, and confirm `HEAD` matches it.
-pub async fn clone_and_pin(repo: &str, commit: &str, dest: &Path) -> Result<(), SandboxError> {
-    // Strip `git+` prefix and trailing ref to feed `git clone`.
-    let clean_url = clean_git_url(repo);
-
+async fn git_in(dest: &Path, args: &[&str]) -> Result<(), SandboxError> {
     let status = Command::new("git")
-        .args(["clone", "--quiet", "--no-checkout", "--", clean_url, "."])
+        .args(args)
         .current_dir(dest)
         .stdin(Stdio::null())
         .status()
         .await
-        .map_err(|e| SandboxError::Git(format!("spawn clone: {e}")))?;
-    if !status.success() {
-        return Err(SandboxError::Git(format!(
-            "git clone {clean_url} failed with status {status:?}"
-        )));
+        .map_err(|e| SandboxError::Git(format!("spawn git {}: {e}", args[0])))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(SandboxError::Git(format!(
+            "git {} failed with status {status:?}",
+            args.join(" ")
+        )))
     }
+}
 
-    // Fetch the exact commit (may not be on a branch / may be unreachable in a shallow clone).
-    let _ = Command::new("git")
-        .args(["fetch", "--quiet", "origin", commit])
-        .current_dir(dest)
-        .stdin(Stdio::null())
-        .status()
-        .await
-        .map_err(|e| SandboxError::Git(format!("spawn fetch: {e}")))?;
-
-    let checkout = Command::new("git")
-        .args(["checkout", "--quiet", "--detach", commit, "--"])
-        .current_dir(dest)
-        .stdin(Stdio::null())
-        .status()
-        .await
-        .map_err(|e| SandboxError::Git(format!("spawn checkout: {e}")))?;
-    if !checkout.success() {
-        return Err(SandboxError::Git(format!(
-            "git checkout {commit} failed (status {checkout:?})"
-        )));
+/// Fetch `commit` from `repo` into an empty `dest` without writing a working tree.
+///
+/// A remote repository is fetched at depth 1, as `actions/checkout` does by default,
+/// and falls back to a full fetch when the server refuses a single commit. A local
+/// repository (such as a study mirror) is cloned with hard links.
+pub async fn fetch_pinned(repo: &str, commit: &str, dest: &Path) -> Result<(), SandboxError> {
+    let url = clean_git_url(repo);
+    if Path::new(url).is_dir() {
+        git_in(
+            dest,
+            &[
+                "clone",
+                "--quiet",
+                "--no-checkout",
+                "--local",
+                "--",
+                url,
+                ".",
+            ],
+        )
+        .await?;
+        // The commit may not be on a branch.
+        let _ = git_in(dest, &["fetch", "--quiet", "origin", commit]).await;
+    } else {
+        git_in(dest, &["init", "--quiet"]).await?;
+        git_in(dest, &["remote", "add", "--", "origin", url]).await?;
+        let shallow = ["fetch", "--quiet", "--depth", "1", "origin", commit];
+        if git_in(dest, &shallow).await.is_err() {
+            git_in(dest, &["fetch", "--quiet", "origin"]).await?;
+        }
     }
+    // Keep the commit reachable for later local clones; fails if it was not fetched.
+    git_in(dest, &["update-ref", "refs/clearhash/pinned", commit]).await
+}
+
+/// Fetch `commit` from `repo` into `dest`, check it out detached, and confirm `HEAD` matches it.
+pub async fn clone_and_pin(repo: &str, commit: &str, dest: &Path) -> Result<(), SandboxError> {
+    fetch_pinned(repo, commit, dest).await?;
+    git_in(dest, &["checkout", "--quiet", "--detach", commit, "--"]).await?;
 
     // Verify HEAD == commit. Defense against a malicious git server / DNS hijack.
     let head_out = Command::new("git")
@@ -739,6 +757,32 @@ mod tests {
             clone_and_pin(repo.path().to_str().unwrap(), &"0".repeat(40), dest.path())
                 .await
                 .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn remote_fetch_is_shallow_and_study_mirrors_clone_locally() {
+        let repo = tempfile::tempdir().unwrap();
+        git(repo.path(), &["init", "--quiet"]);
+        std::fs::write(repo.path().join("source"), "original").unwrap();
+        let pin = commit_fixture(repo.path());
+        std::fs::write(repo.path().join("source"), "later").unwrap();
+        commit_fixture(repo.path());
+        let url = format!("file://{}", repo.path().display());
+
+        let mirror = tempfile::tempdir().unwrap();
+        fetch_pinned(&url, &pin, mirror.path()).await.unwrap();
+        assert!(!mirror.path().join("source").exists(), "no working tree");
+        assert!(mirror.path().join(".git/shallow").exists(), "depth-1 fetch");
+
+        let dest = tempfile::tempdir().unwrap();
+        clone_and_pin(mirror.path().to_str().unwrap(), &pin, dest.path())
+            .await
+            .unwrap();
+        assert_eq!(git(dest.path(), &["rev-parse", "HEAD"]), pin);
+        assert_eq!(
+            std::fs::read_to_string(dest.path().join("source")).unwrap(),
+            "original"
         );
     }
 
