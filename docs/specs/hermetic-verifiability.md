@@ -408,10 +408,26 @@ counts had been looked at to check the tooling; no match rate had been.
    `dependencies` with an integrity mismatch for `package-manager.tgz` is
    run once more with it, into `ledger-pin.jsonl`.
 
-For a release that appears in a rerun ledger, its rerun records replace the
-earlier ones in every arm, whatever the rerun's outcome. Rule 3 is applied
-after rule 2. All ledgers are kept, and the paper reports how many releases
-each rule reran and how many changed stage.
+4. **Git configuration (added 2026-11-13, after rule 2 ran).** Rule 2
+   recovered none of its 73 releases (60 repositories are gone, 5 attested
+   commits are on no ref, 2 commits could not be obtained, and 9 failed at
+   checkout). The 9 failed because the build host's global Git configuration
+   installs a Git LFS filter, which fails on any repository that tracks files
+   with LFS. A verifier whose result depends on the user's global Git
+   configuration is not hermetic. After the main run the tool therefore runs
+   every `git` command with `GIT_CONFIG_GLOBAL=/dev/null`,
+   `GIT_CONFIG_NOSYSTEM=1`, and `GIT_TERMINAL_PROMPT=0`, so LFS-tracked paths
+   check out as pointer files, as on a host without Git LFS. Every release
+   whose last record in any arm is at stage `source` with an error from
+   `git checkout` is run once more with the fixed tool, into
+   `ledger-lfs.jsonl`. At that point stage outcomes had been looked at, but
+   no match rate had.
+
+Rules 3 and 4 use the same fixed tool, tagged `hv-freeze-2`. For a release
+that appears in a rerun ledger, its rerun records replace the earlier ones
+in every arm, whatever the rerun's outcome. Rules are applied in order. All
+ledgers are kept, and the paper reports how many releases each rule reran
+and how many changed stage.
 
 ## Release
 
