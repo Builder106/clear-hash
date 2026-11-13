@@ -269,6 +269,13 @@ JSONL ledger with one line per release and arm.
   the McNemar test runs for npm only. That family then has one test.
 - **Secondary.** Arm I rates and the paired differences I minus H and N minus
   I, with Newcombe intervals. These are outside the confirmatory family.
+- **Clustering check (added 2026-11-13, before any main-run result).** The
+  main npm draw has 15 releases from one monorepo and 14 other repositories
+  with more than one release, so releases are not fully independent. Report
+  the primary estimate again with a repository-level cluster bootstrap and
+  with each repository's releases counted once (first in draw order). The
+  confirmatory test stays as specified. The check says whether clustering
+  changes the conclusion.
 - **Exploratory.** T0 rates. Gap by dependent-count tier from deps.dev.
   Comparison of arm N rates with the Solarin et al. npm completion figure.
   These are labeled exploratory in the paper.
@@ -348,6 +355,23 @@ packages without provenance or about Cargo.
    workshop such as ACM SCORED. Confirm the current call for papers before
    formatting. `tracks.md` lists only IEEE S&P, USENIX Security, ACM CCS, and
    NDSS, which are a stretch for this scope.
+
+## Main sample and freeze (2026-11-13)
+
+The pilot ran three times. The third run, at `e72f1b9`, surfaced no new
+tooling bug. The main sample was then drawn with the seed above:
+
+- npm: the first 600 packages in draw order, 600 distinct names. 598 are
+  hosted on GitHub.
+- PyPI: 3,000 candidates in draw order, screened in order until 600 were
+  kept. 629 were screened: 600 kept, 27 had no sdist, 2 were missing from
+  PyPI. None had an sdist without provenance.
+- Every release was published on or before 2026-10-31 23:59:59 UTC.
+
+Files are in `study/main/`. ClearHash is frozen at the tag `hv-freeze`.
+After the tag, only documentation and analysis code may change. The ledger
+records the tool commit for every row, so any later change to the tool is
+visible in the data.
 
 ## Release
 
