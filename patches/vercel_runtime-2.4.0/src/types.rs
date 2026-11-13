@@ -45,7 +45,7 @@ impl http_body::Body for ResponseBody {
 impl From<&str> for ResponseBody {
     fn from(value: &str) -> Self {
         let body = http_body_util::Full::new(Bytes::from(value.to_string()))
-            .map_err(|e| Box::new(e) as Error);
+            .map_err(|e| -> Error { match e {} });
         ResponseBody(body.boxed())
     }
 }
@@ -53,14 +53,14 @@ impl From<&str> for ResponseBody {
 impl From<String> for ResponseBody {
     fn from(value: String) -> Self {
         let bytes = Bytes::from(value);
-        let body = http_body_util::Full::new(bytes).map_err(|e| Box::new(e) as Error);
+        let body = http_body_util::Full::new(bytes).map_err(|e| -> Error { match e {} });
         ResponseBody(body.boxed())
     }
 }
 
 impl From<Bytes> for ResponseBody {
     fn from(value: Bytes) -> Self {
-        let body = http_body_util::Full::new(value).map_err(|e| Box::new(e) as Error);
+        let body = http_body_util::Full::new(value).map_err(|e| -> Error { match e {} });
         ResponseBody(body.boxed())
     }
 }
@@ -68,14 +68,14 @@ impl From<Bytes> for ResponseBody {
 impl From<Vec<u8>> for ResponseBody {
     fn from(value: Vec<u8>) -> Self {
         let bytes = Bytes::from(value);
-        let body = http_body_util::Full::new(bytes).map_err(|e| Box::new(e) as Error);
+        let body = http_body_util::Full::new(bytes).map_err(|e| -> Error { match e {} });
         ResponseBody(body.boxed())
     }
 }
 
 impl From<http_body_util::Full<Bytes>> for ResponseBody {
     fn from(value: http_body_util::Full<Bytes>) -> Self {
-        let body = value.map_err(|e| Box::new(e) as Error);
+        let body = value.map_err(|e| -> Error { match e {} });
         ResponseBody(body.boxed())
     }
 }
@@ -96,14 +96,14 @@ impl From<serde_json::Value> for ResponseBody {
     fn from(value: serde_json::Value) -> Self {
         let json = serde_json::to_string(&value).unwrap_or_else(|_| "{}".to_string());
         let bytes = Bytes::from(json);
-        let body = http_body_util::Full::new(bytes).map_err(|e| Box::new(e) as Error);
+        let body = http_body_util::Full::new(bytes).map_err(|e| -> Error { match e {} });
         ResponseBody(body.boxed())
     }
 }
 
 impl From<()> for ResponseBody {
     fn from(_: ()) -> Self {
-        let body = http_body_util::Full::new(Bytes::new()).map_err(|e| Box::new(e) as Error);
+        let body = http_body_util::Full::new(Bytes::new()).map_err(|e| -> Error { match e {} });
         ResponseBody(body.boxed())
     }
 }
@@ -111,7 +111,7 @@ impl From<()> for ResponseBody {
 impl<T: AsRef<str>> From<Html<T>> for ResponseBody {
     fn from(value: Html<T>) -> Self {
         let body = http_body_util::Full::new(Bytes::from(value.0.as_ref().to_string()))
-            .map_err(|e| Box::new(e) as Error);
+            .map_err(|e| -> Error { match e {} });
         ResponseBody(body.boxed())
     }
 }
