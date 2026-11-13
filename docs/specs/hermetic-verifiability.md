@@ -386,6 +386,33 @@ After the tag, only documentation and analysis code may change. The ledger
 records the tool commit for every row, so any later change to the tool is
 visible in the data.
 
+### Reruns after the main run (fixed 2026-11-13)
+
+These rules were written while the main run was in progress. Interim stage
+counts had been looked at to check the tooling; no match rate had been.
+
+1. **Infrastructure.** Rerun the main run's script once more. The driver
+   reruns only releases whose last record is `infrastructure`.
+2. **Source retry.** Some releases stopped at the source stage although
+   their repository is reachable and serves the attested commit; a fetch on
+   the build host later succeeded, so the first failure was transient. Every
+   release whose last main-run record in any arm is at stage `source` is run
+   once more, with the frozen binary, into `ledger-retry.jsonl`.
+3. **Yarn 2+ pinned release.** A `packageManager` hash on a Yarn 2+ pin
+   covers the `yarn.js` file that Corepack downloads from
+   `repo.yarnpkg.com`, not the `@yarnpkg/cli-dist` tarball that `hv-freeze`
+   checks it against, so a correct pin fails as an integrity mismatch. After
+   the main run, ClearHash fetches that `yarn.js` file and checks it against
+   the pin; a pnpm pin keeps its current check. The fixed tool gets the tag
+   `hv-freeze-2`. Every release whose last record in any arm failed at stage
+   `dependencies` with an integrity mismatch for `package-manager.tgz` is
+   run once more with it, into `ledger-pin.jsonl`.
+
+For a release that appears in a rerun ledger, its rerun records replace the
+earlier ones in every arm, whatever the rerun's outcome. Rule 3 is applied
+after rule 2. All ledgers are kept, and the paper reports how many releases
+each rule reran and how many changed stage.
+
 ## Release
 
 Preprint on arXiv, `cs.CR` with a `cs.SE` cross-list. Code, frame SQL, sample
