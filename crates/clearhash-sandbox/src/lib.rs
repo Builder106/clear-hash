@@ -377,8 +377,21 @@ fn clean_git_url(repo: &str) -> &str {
     }
 }
 
+/// A `git` command that ignores the host's global and system configuration. A user's
+/// Git LFS filter, credential helper, or URL rewrite would otherwise change what a
+/// verification does. LFS-tracked paths check out as pointer files, as on a host
+/// without Git LFS.
+fn git_command() -> Command {
+    let mut command = Command::new("git");
+    command
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_TERMINAL_PROMPT", "0");
+    command
+}
+
 async fn git_in(dest: &Path, args: &[&str]) -> Result<(), SandboxError> {
-    let status = Command::new("git")
+    let status = git_command()
         .args(args)
         .current_dir(dest)
         .stdin(Stdio::null())
@@ -436,7 +449,7 @@ pub async fn clone_and_pin(repo: &str, commit: &str, dest: &Path) -> Result<(), 
     git_in(dest, &["checkout", "--quiet", "--detach", commit, "--"]).await?;
 
     // Verify HEAD == commit. Defense against a malicious git server / DNS hijack.
-    let head_out = Command::new("git")
+    let head_out = git_command()
         .args(["rev-parse", "HEAD"])
         .current_dir(dest)
         .output()
@@ -757,6 +770,45 @@ mod tests {
             clone_and_pin(repo.path().to_str().unwrap(), &"0".repeat(40), dest.path())
                 .await
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn git_ignores_host_configuration() {
+        let command = git_command();
+        let env: std::collections::HashMap<_, _> = command
+            .as_std()
+            .get_envs()
+            .map(|(k, v)| {
+                (
+                    k.to_string_lossy().into_owned(),
+                    v.map(|v| v.to_string_lossy().into_owned()),
+                )
+            })
+            .collect();
+        assert_eq!(env["GIT_CONFIG_GLOBAL"].as_deref(), Some("/dev/null"));
+        assert_eq!(env["GIT_CONFIG_NOSYSTEM"].as_deref(), Some("1"));
+        assert_eq!(env["GIT_TERMINAL_PROMPT"].as_deref(), Some("0"));
+    }
+
+    #[tokio::test]
+    async fn lfs_tracked_paths_check_out_without_git_lfs() {
+        let repo = tempfile::tempdir().unwrap();
+        git(repo.path(), &["init", "--quiet"]);
+        std::fs::write(
+            repo.path().join(".gitattributes"),
+            "*.bin filter=lfs diff=lfs merge=lfs -text\n",
+        )
+        .unwrap();
+        std::fs::write(repo.path().join("asset.bin"), "pointer text").unwrap();
+        let pin = commit_fixture(repo.path());
+        let dest = tempfile::tempdir().unwrap();
+        clone_and_pin(repo.path().to_str().unwrap(), &pin, dest.path())
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dest.path().join("asset.bin")).unwrap(),
+            "pointer text"
         );
     }
 
