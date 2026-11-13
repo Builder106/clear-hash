@@ -522,6 +522,12 @@ async fn run_arm(
             }
             lock_source = Some(if committed { "committed" } else { "inferred" }.to_string());
             options.dependencies = offline(adapter, &source_dir, dir).await?;
+            // The build installs from /deps, never from the lock. An inferred PyPI lock
+            // left in the tree would be packed into the sdist (npm never packs its lock).
+            if !committed && pkg.ecosystem == Ecosystem::Pypi {
+                std::fs::remove_file(source_dir.join("pylock.toml"))
+                    .map_err(|e| Failure::new(Stage::Infrastructure, e))?;
+            }
         }
     }
 
