@@ -311,6 +311,13 @@ before the main run.
    disk.
 6. Network-off pnpm and Yarn installs, as set out under Package-manager
    scope.
+7. Source fetched at depth 1 (added 2026-11-13, from the pilot). A full
+   clone of `fontsource/font-files` holds 19 GB of history against a 5 GB
+   tree at the attested commit, and filled the build disk. The verifier now
+   fetches only the attested commit, as `actions/checkout` does by default,
+   and falls back to a full fetch when a server refuses a single commit.
+   `HEAD` is still checked against the attested commit. Builds that read
+   Git history (tags, `git describe`) see only that commit, in every arm.
 
 Statistics run in a small locked Python environment under `study/analysis/`.
 
