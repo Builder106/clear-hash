@@ -78,6 +78,8 @@ if [ "$PM" != npm ]; then
       const bin = typeof p.bin === "string" ? p.bin : (p.bin || {})[process.argv[1]];
       console.log(bin ? `node /tmp/clearhash-pm/package/${bin}` : `/tmp/clearhash-pm/package/${process.argv[1]}`);
     ' "$COMMAND")
+  elif [ -f /tools/yarn.js ]; then
+    ENTRY="node /tools/yarn.js"
   else
     RELEASE=$(sed -n 's/^yarnPath:[[:space:]]*//p' .yarnrc.yml 2>/dev/null | tr -d "\"'" | tr -d '[:space:]')
     if [ "$PM" != yarn-berry ] || [ -z "$RELEASE" ]; then

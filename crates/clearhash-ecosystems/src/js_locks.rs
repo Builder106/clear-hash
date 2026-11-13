@@ -16,6 +16,8 @@ use crate::AdapterError;
 
 /// File name of the package-manager tarball under `/tools`.
 pub const PACKAGE_MANAGER_ARCHIVE: &str = "package-manager.tgz";
+/// File name of a Yarn 2+ bundle under `/tools`, for pins whose hash covers that file.
+pub const YARN_BUNDLE: &str = "yarn.js";
 
 /// Used when a pnpm project has no `packageManager` pin. pnpm 10 writes lockfile 9.0.
 const DEFAULT_PNPM: (&str, &str) = (
@@ -431,6 +433,20 @@ pub fn package_manager(source: &Path, cpu: &str) -> Result<Option<Dependency>, A
                 "packageManager pins Yarn 2+ but yarn.lock is a Yarn 1 lock",
             ))
         }
+        // Corepack's hash covers the `yarn.js` file at repo.yarnpkg.com, not the
+        // `@yarnpkg/cli-dist` tarball, so a hashed pin is checked against that file.
+        (
+            Some(Manager::YarnBerry),
+            Some(Pin {
+                version,
+                hash: Some(hash),
+                ..
+            }),
+        ) if version.major >= 2 => archive(
+            &format!("https://repo.yarnpkg.com/{version}/packages/yarnpkg-cli/bin/yarn.js"),
+            YARN_BUNDLE.into(),
+            Check::Pinned(hash),
+        )?,
         (Some(Manager::YarnBerry), Some(pin)) if pin.version.major >= 2 => {
             pinned("@yarnpkg/cli-dist", pin)?
         }
@@ -668,6 +684,25 @@ mod tests {
         assert_eq!(
             berry.url.as_str(),
             "https://registry.npmjs.org/@yarnpkg/cli-dist/-/cli-dist-4.18.1.tgz"
+        );
+        // A hashed pin covers the yarn.js bundle that Corepack downloads.
+        let hex = "c38cafb5c7bb273f3926d04e55e1d8c9dfa7d9c3ea1f36a4868fa028b9e5f72298f0b7f401ad5eb921749eb012eb1c3bb74bf7503df3ee43fd600d14a018266f";
+        write(
+            source.path(),
+            "package.json",
+            &format!(r#"{{"packageManager":"yarn@4.10.3+sha512.{hex}"}}"#),
+        );
+        let bundle = package_manager(source.path(), "x64").unwrap().unwrap();
+        assert_eq!(
+            bundle.url.as_str(),
+            "https://repo.yarnpkg.com/4.10.3/packages/yarnpkg-cli/bin/yarn.js"
+        );
+        assert_eq!(bundle.filename, YARN_BUNDLE);
+        assert!(matches!(bundle.check, Check::Pinned(_)));
+        write(
+            source.path(),
+            "package.json",
+            r#"{"packageManager":"yarn@4.18.1"}"#,
         );
         std::fs::create_dir_all(source.path().join(".yarn/releases")).unwrap();
         write(source.path(), ".yarn/releases/yarn-4.18.1.cjs", "");
