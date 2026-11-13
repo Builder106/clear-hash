@@ -318,6 +318,16 @@ before the main run.
    and falls back to a full fetch when a server refuses a single commit.
    `HEAD` is still checked against the attested commit. Builds that read
    Git history (tags, `git describe`) see only that commit, in every arm.
+8. PyPI project lookup (added 2026-11-13, from the pilot). The PyPI recipe
+   built the repository root, so a monorepo release rebuilt the wrong
+   project. The recipe and the arm I resolver now build the directory whose
+   `pyproject.toml` `[project] name` (or `setup.cfg` `[metadata] name`)
+   matches the distribution under PEP 503 normalization, and fall back to
+   the root when none does. The npm recipe already located its package.
+9. Arm I lock removal (added 2026-11-13, from the pilot). An inferred
+   `pylock.toml` left at the root was packed into the sdist and made arm I
+   differ from arm N by that file alone. It is now deleted after the host
+   fetch; the build installs from `/deps` and never reads it.
 
 Statistics run in a small locked Python environment under `study/analysis/`.
 
