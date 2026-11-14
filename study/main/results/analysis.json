@@ -1,0 +1,464 @@
+{
+  "ecosystems": {
+    "NPM": {
+      "arm_i_lock_source": {
+        "committed": 192,
+        "inferred": 31,
+        "none": 377
+      },
+      "arms": {
+        "h": {
+          "compared_not_matched": 58,
+          "reasons": {
+            "attestation: signing workflow in another repository": 32,
+            "build: TypeScript compile failed": 38,
+            "build: build tried to use the network": 10,
+            "build: engine version mismatch": 6,
+            "build: other": 30,
+            "build: timeout": 1,
+            "build: version not in source tree": 89,
+            "dependencies: integrity mismatch": 1,
+            "dependencies: other": 1,
+            "fetch: artifact missing from registry": 1,
+            "lock: lock entry needs the network": 13,
+            "lock: lock without usable hashes": 26,
+            "lock: no committed lock": 130,
+            "lock: other": 2,
+            "lock: unsupported lock version": 6,
+            "source: attested commit unavailable": 22
+          },
+          "stages": {
+            "attestation": 32,
+            "build": 174,
+            "compared": 192,
+            "dependencies": 2,
+            "fetch": 1,
+            "lock": 177,
+            "source": 22
+          },
+          "t0_matches": 128,
+          "t0_rate": 0.21333333333333335,
+          "t0_wilson95": [
+            0.1824314860069765,
+            0.24788255590754527
+          ],
+          "t1_matches": 134,
+          "t1_rate": 0.22333333333333333,
+          "t1_wilson95": [
+            0.19182825353148128,
+            0.25835855436276645
+          ]
+        },
+        "i": {
+          "compared_not_matched": 61,
+          "reasons": {
+            "attestation: signing workflow in another repository": 32,
+            "build: TypeScript compile failed": 40,
+            "build: build tried to use the network": 11,
+            "build: engine version mismatch": 7,
+            "build: other": 55,
+            "build: version not in source tree": 129,
+            "dependencies: integrity mismatch": 1,
+            "dependencies: other": 1,
+            "fetch: artifact missing from registry": 1,
+            "lock: lock entry needs the network": 13,
+            "lock: lock inference failed": 29,
+            "lock: lock without usable hashes": 28,
+            "lock: other": 2,
+            "lock: unsupported lock version": 6,
+            "source: attested commit unavailable": 22
+          },
+          "stages": {
+            "attestation": 32,
+            "build": 242,
+            "compared": 223,
+            "dependencies": 2,
+            "fetch": 1,
+            "lock": 78,
+            "source": 22
+          },
+          "t0_matches": 156,
+          "t0_rate": 0.26,
+          "t0_wilson95": [
+            0.22650792164694156,
+            0.2965456948396349
+          ],
+          "t1_matches": 162,
+          "t1_rate": 0.27,
+          "t1_wilson95": [
+            0.2360226466777246,
+            0.3069037357885778
+          ]
+        },
+        "n": {
+          "compared_not_matched": 72,
+          "reasons": {
+            "attestation: signing workflow in another repository": 32,
+            "build: TypeScript compile failed": 50,
+            "build: engine version mismatch": 9,
+            "build: other": 75,
+            "build: timeout": 1,
+            "build: version not in source tree": 156,
+            "dependencies: integrity mismatch": 1,
+            "fetch: artifact missing from registry": 1,
+            "source: attested commit unavailable": 22
+          },
+          "stages": {
+            "attestation": 32,
+            "build": 291,
+            "compared": 253,
+            "dependencies": 1,
+            "fetch": 1,
+            "source": 22
+          },
+          "t0_matches": 176,
+          "t0_rate": 0.29333333333333333,
+          "t0_wilson95": [
+            0.2583102463852376,
+            0.3309859233670921
+          ],
+          "t1_matches": 181,
+          "t1_rate": 0.3016666666666667,
+          "t1_wilson95": [
+            0.2662981889561229,
+            0.3395586191126452
+          ]
+        }
+      },
+      "clustering": {
+        "cluster_bootstrap_n_minus_h": {
+          "ci95": [
+            0.0576271186440678,
+            0.10068259385665529
+          ],
+          "repositories": 569,
+          "resamples": 4000
+        },
+        "one_per_repository": {
+          "ci95": [
+            0.060102631805244056,
+            0.1055833356912013
+          ],
+          "difference": 0.08260105448154657,
+          "mcnemar_exact_p": 1.4210854715202004e-14,
+          "table": {
+            "both": 133,
+            "neither": 389,
+            "only_h": 0,
+            "only_n": 47
+          }
+        }
+      },
+      "primary_n_minus_h": {
+        "ci95": [
+          0.05697249746181533,
+          0.10025111291035632
+        ],
+        "confirmatory": true,
+        "difference": 0.07833333333333334,
+        "holm_p": 1.4210854715202004e-14,
+        "mcnemar_exact_p": 1.4210854715202004e-14,
+        "reject_at_alpha": true,
+        "table": {
+          "both": 134,
+          "neither": 419,
+          "only_h": 0,
+          "only_n": 47
+        }
+      },
+      "releases_complete": 600,
+      "releases_drawn": 600,
+      "secondary": {
+        "i_minus_h": {
+          "ci95": [
+            0.029856564127281576,
+            0.06410639193604628
+          ],
+          "difference": 0.04666666666666667,
+          "mcnemar_exact_p": 7.450580596923828e-09,
+          "table": {
+            "both": 134,
+            "neither": 438,
+            "only_h": 0,
+            "only_i": 28
+          }
+        },
+        "n_minus_i": {
+          "ci95": [
+            0.017619353758827568,
+            0.04607642187284283
+          ],
+          "difference": 0.03166666666666667,
+          "mcnemar_exact_p": 3.814697265625e-06,
+          "table": {
+            "both": 162,
+            "neither": 419,
+            "only_i": 0,
+            "only_n": 19
+          }
+        }
+      }
+    },
+    "PYPI": {
+      "arm_i_lock_source": {
+        "inferred": 454,
+        "none": 146
+      },
+      "arms": {
+        "h": {
+          "compared_not_matched": 0,
+          "reasons": {
+            "lock: no committed lock": 558,
+            "source: attested commit unavailable": 42
+          },
+          "stages": {
+            "lock": 558,
+            "source": 42
+          },
+          "t0_matches": 0,
+          "t0_rate": 0.0,
+          "t0_wilson95": [
+            0.0,
+            0.006361701013700707
+          ],
+          "t1_matches": 0,
+          "t1_rate": 0.0,
+          "t1_wilson95": [
+            0.0,
+            0.006361701013700707
+          ]
+        },
+        "i": {
+          "compared_not_matched": 37,
+          "reasons": {
+            "artifact: unexpected archive layout": 37,
+            "build: build backend failed": 43,
+            "lock: lock inference failed": 24,
+            "source: attested commit unavailable": 42
+          },
+          "stages": {
+            "artifact": 37,
+            "build": 43,
+            "compared": 454,
+            "lock": 24,
+            "source": 42
+          },
+          "t0_matches": 409,
+          "t0_rate": 0.6816666666666666,
+          "t0_wilson95": [
+            0.6433382914559322,
+            0.7176836238424231
+          ],
+          "t1_matches": 417,
+          "t1_rate": 0.695,
+          "t1_wilson95": [
+            0.657016298987854,
+            0.7305026376168028
+          ]
+        },
+        "n": {
+          "compared_not_matched": 39,
+          "reasons": {
+            "artifact: unexpected archive layout": 38,
+            "build: build backend failed": 54,
+            "source: attested commit unavailable": 42
+          },
+          "stages": {
+            "artifact": 38,
+            "build": 54,
+            "compared": 466,
+            "source": 42
+          },
+          "t0_matches": 419,
+          "t0_rate": 0.6983333333333334,
+          "t0_wilson95": [
+            0.6604413808873549,
+            0.7337018110438772
+          ],
+          "t1_matches": 427,
+          "t1_rate": 0.7116666666666667,
+          "t1_wilson95": [
+            0.6741646561225789,
+            0.7464755571149544
+          ]
+        }
+      },
+      "clustering": {
+        "cluster_bootstrap_n_minus_h": {
+          "ci95": [
+            0.672787979966611,
+            0.7487437185929648
+          ],
+          "repositories": 597,
+          "resamples": 4000
+        },
+        "one_per_repository": {
+          "ci95": [
+            0.6772137577248414,
+            0.7499784211673214
+          ],
+          "difference": 0.7152428810720268,
+          "mcnemar_exact_p": 5.770611636116085e-129,
+          "table": {
+            "both": 0,
+            "neither": 170,
+            "only_h": 0,
+            "only_n": 427
+          }
+        }
+      },
+      "primary_n_minus_h": {
+        "ci95": [
+          0.6736288955090846,
+          0.7464755571149544
+        ],
+        "confirmatory": false,
+        "difference": 0.7116666666666667,
+        "mcnemar_exact_p": 5.770611636116085e-129,
+        "table": {
+          "both": 0,
+          "neither": 173,
+          "only_h": 0,
+          "only_n": 427
+        }
+      },
+      "releases_complete": 600,
+      "releases_drawn": 600,
+      "secondary": {
+        "i_minus_h": {
+          "ci95": [
+            0.6564872387075683,
+            0.7305026376168028
+          ],
+          "difference": 0.695,
+          "mcnemar_exact_p": 5.909106315382871e-126,
+          "table": {
+            "both": 0,
+            "neither": 183,
+            "only_h": 0,
+            "only_i": 417
+          }
+        },
+        "n_minus_i": {
+          "ci95": [
+            0.00626131932652804,
+            0.027326345840537808
+          ],
+          "difference": 0.016666666666666666,
+          "mcnemar_exact_p": 0.001953125,
+          "table": {
+            "both": 417,
+            "neither": 173,
+            "only_i": 0,
+            "only_n": 10
+          }
+        }
+      }
+    }
+  },
+  "missing": {
+    "NPM": [],
+    "PYPI": []
+  },
+  "pypi_screening": {
+    "kept": 600,
+    "no_sdist": 27,
+    "release_missing": 2
+  },
+  "rerun_releases": [
+    [
+      "NPM:@ailura/alpinejs-history@0.1.0",
+      "NPM:@blueprintui/orbit@1.1.1",
+      "NPM:@boundaryml/baml-bridge@0.23.1-nightly.20261030.a",
+      "NPM:@clairview/schema@12.1.1",
+      "NPM:@contractspec/lib.presentation-runtime-react@40.0.3",
+      "NPM:@delino/react-forge@0.2.2",
+      "NPM:@gsd-revamp/engine-darwin-x64@1.0.2",
+      "NPM:@hvn-oss/storage-react@0.1.1",
+      "NPM:@keplr-wallet/wc-client@0.13.41",
+      "NPM:@livekit/rtc-ffi-bindings-win32-x64-msvc@0.13.2",
+      "NPM:@moebiusx/otel-mcp-server@1.7.1",
+      "NPM:@nats-kit/core@0.5.0",
+      "NPM:@nvidia-elements/cli@2.2.15",
+      "NPM:@oinpanel/meteor-admin-sdk@6.2.0",
+      "NPM:@pandi-coding-agent/pandi-local-memory@0.2.7",
+      "NPM:@pith-hash/pith-mp3@0.1.1",
+      "NPM:@rome-os/rome-web-components@0.1.23",
+      "NPM:@scaryterry/pdfium-linux-x64-musl@0.0.3",
+      "NPM:@skaldapp/flat-json-tree@2.3.23",
+      "NPM:@swiveltechnologies/swico@0.2.9",
+      "NPM:@technical-1/tracing@1.1.1",
+      "NPM:@vib-rato/natives-darwin-x64@0.19.0",
+      "NPM:@workflow-ts/core@0.3.3",
+      "NPM:cjs-consumer-example@1.3.3",
+      "NPM:lituanic@0.1.8",
+      "NPM:mujoco-react@11.0.0",
+      "NPM:oh-my-xcsh-windows-x64-baseline@0.0.6",
+      "NPM:tokenc@0.2.0",
+      "NPM:unkey@2.0.153",
+      "PYPI:acugis-report@0.1.0",
+      "PYPI:aegis-qa@0.2.0",
+      "PYPI:aikits@0.1.0",
+      "PYPI:asr-var-cvar-tail-risk@1.0.0",
+      "PYPI:au-tax-change-impact-monitor@0.1.1",
+      "PYPI:automationpro@0.4.1",
+      "PYPI:babelwrap@0.1.1",
+      "PYPI:bank131-sdk@0.1.0",
+      "PYPI:cervellaswarm-event-store@0.1.0",
+      "PYPI:coreason-publisher@0.5.0",
+      "PYPI:csp-tarayici@0.4.1",
+      "PYPI:dataguard-ai@0.2.1",
+      "PYPI:doclayer-mcp@0.1.0",
+      "PYPI:ducky-python-module@1.0.1",
+      "PYPI:easilyai@0.2.1",
+      "PYPI:factframe-mcp@0.1.1",
+      "PYPI:greenode-mcp-server@0.4.1",
+      "PYPI:heterosis-substrate@0.1.3",
+      "PYPI:iil-adrfw@0.9.0",
+      "PYPI:index4ai@0.1.0",
+      "PYPI:livekit-plugins-soniox@1.8.10",
+      "PYPI:loony-cli@0.1.1",
+      "PYPI:mcnexus@1.3.0",
+      "PYPI:mcp-link@0.1.3",
+      "PYPI:morphmic@1.0.0",
+      "PYPI:neoaudit@0.1.0",
+      "PYPI:notesctl@1.1.0",
+      "PYPI:optilife-models@2025.6.26.1536",
+      "PYPI:oris-sdk@0.2.0",
+      "PYPI:perch-py@0.1.3",
+      "PYPI:plugadvpl@0.44.0",
+      "PYPI:pronto-rest@0.0.1",
+      "PYPI:pyroutingkit@0.2.1",
+      "PYPI:qpher@1.4.0",
+      "PYPI:qr-builder@0.3.2",
+      "PYPI:renpy-rigging@0.5.9",
+      "PYPI:slack-webhook-notifier@2.0.7",
+      "PYPI:tensorplate-python@0.2.1",
+      "PYPI:tide-runtime@0.2.11",
+      "PYPI:tokenmoulds@3.9.1",
+      "PYPI:trentai-mcp@0.8.2",
+      "PYPI:visus-desktop@0.3.1",
+      "PYPI:zeno-channel-cli@1.1.0",
+      "PYPI:zomi-syl@0.3.0"
+    ],
+    [
+      "NPM:@ciderpress/cli@1.0.0-rc.18",
+      "NPM:@hcgstudio/ogma@0.0.4"
+    ],
+    [
+      "NPM:@blueprintui/orbit@1.1.1",
+      "NPM:@boundaryml/baml-bridge@0.23.1-nightly.20261030.a",
+      "NPM:@livekit/rtc-ffi-bindings-win32-x64-msvc@0.13.2",
+      "NPM:@nvidia-elements/cli@2.2.15",
+      "NPM:@rome-os/rome-web-components@0.1.23",
+      "NPM:cjs-consumer-example@1.3.3",
+      "NPM:mujoco-react@11.0.0",
+      "PYPI:livekit-plugins-soniox@1.8.10",
+      "PYPI:zomi-syl@0.3.0"
+    ]
+  ],
+  "tool_commits": [
+    "77424cf7300bd917477ae032339840bf0c7c64a7",
+    "c3c9082f04c95038b939db9501a8c39f1874ee85"
+  ]
+}
