@@ -143,7 +143,10 @@ pub trait EcosystemAdapter: Send + Sync {
             .into_iter()
             .filter_map(|e| e.ok())
         {
-            if !entry.file_type().is_file() {
+            // Symlinks count, with their target path as content: a build backend copies
+            // the target into the installed package, so a link changes what installs.
+            let symlink = entry.file_type().is_symlink();
+            if !entry.file_type().is_file() && !symlink {
                 continue;
             }
             let rel = entry
@@ -157,6 +160,17 @@ pub trait EcosystemAdapter: Send + Sync {
                 .iter()
                 .any(|pat| path_matches(pat, &rel_str))
             {
+                continue;
+            }
+
+            if symlink {
+                let target = std::fs::read_link(entry.path())
+                    .map_err(|e| AdapterError::Walk(format!("readlink {}: {}", rel_str, e)))?;
+                let mut content = b"symlink:".to_vec();
+                content.extend_from_slice(target.to_string_lossy().as_bytes());
+                out.push(clearhash_core::tree::entry_from_bytes(
+                    rel_str, &content, false,
+                ));
                 continue;
             }
 
@@ -238,6 +252,42 @@ mod tests {
         assert_eq!(for_ecosystem(Ecosystem::Npm).name(), "npm");
         assert_eq!(for_ecosystem(Ecosystem::Pypi).name(), "pypi");
         assert_eq!(for_ecosystem(Ecosystem::Cargo).name(), "cargo");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinks_count_with_their_target() {
+        let adapter = for_ecosystem(Ecosystem::Pypi);
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("evil.py"), "VALUE = 1\n").unwrap();
+        let plain = adapter.build_entries(root.path()).unwrap();
+        std::os::unix::fs::symlink("evil.py", root.path().join("plugin.py")).unwrap();
+        let linked = adapter.build_entries(root.path()).unwrap();
+        assert_eq!(linked.len(), plain.len() + 1);
+        let link = linked.iter().find(|e| e.path == "plugin.py").unwrap();
+        assert_eq!(
+            link,
+            &clearhash_core::tree::entry_from_bytes("plugin.py", b"symlink:evil.py", false)
+        );
+    }
+
+    #[test]
+    fn sdist_metadata_is_compared() {
+        let adapter = for_ecosystem(Ecosystem::Pypi);
+        for path in [
+            "PKG-INFO",
+            "q3.egg-info/SOURCES.txt",
+            "pkg/x.dist-info/data",
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            std::fs::create_dir_all(root.path().join(path).parent().unwrap()).unwrap();
+            std::fs::write(root.path().join(path), "x").unwrap();
+            assert_eq!(
+                adapter.build_entries(root.path()).unwrap().len(),
+                1,
+                "{path}"
+            );
+        }
     }
 
     #[test]

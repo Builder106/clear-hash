@@ -288,7 +288,10 @@ fi
     }
 
     fn ignore_paths(&self) -> &'static [&'static str] {
-        &["PKG-INFO", "*.egg-info/*", "*.dist-info/*"]
+        // Nothing is ignored. Build backends read sdist metadata: setuptools-scm takes the
+        // version from PKG-INFO, and setuptools installs the files egg-info's SOURCES.txt
+        // lists. The patterns also matched inside package directories, whose files install.
+        &[]
     }
 }
 
