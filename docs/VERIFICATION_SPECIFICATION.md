@@ -1,6 +1,6 @@
 # ClearHash Verification & Architecture Specification
 
-This document details the cryptographic attestation pipeline, container isolation guarantees, and differential tree matching algorithms implemented in ClearHash.
+This document describes ClearHash's cryptographic attestation pipeline, container isolation boundaries, and file-tree comparison.
 
 ## Pipeline Architecture
 
@@ -14,7 +14,7 @@ ClearHash verifies supply-chain integrity through a five-stage pipeline:
 
 ## Differential Classification Taxonomy
 
-ClearHash categorizes all tree discrepancies into four distinct categories:
+ClearHash groups tree discrepancies into four categories:
 
 | Category | Description | Example |
 | --- | --- | --- |

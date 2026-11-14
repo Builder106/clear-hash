@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest. This is a young project — patch reviews are quick.
+Thanks for your interest in contributing to ClearHash.
 
 ## Dev setup
 
@@ -70,7 +70,7 @@ fix(sandbox): handle monorepo subdirs in npm rebuild script
 
 ## Out of scope
 
-To keep the surface honest, ClearHash explicitly *does not* try to:
+ClearHash does not try to:
 
 - Detect *malicious source code*. ClearHash verifies that the binary matches the source.
 
