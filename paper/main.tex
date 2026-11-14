@@ -8,7 +8,7 @@
 \usepackage[hidelinks]{hyperref}
 \usepackage{amsmath}
 
-\title{Verifying Attested Packages Without the Network:\\
+\title{Verifying Attested Packages with Network-Isolated Builds:\\
 A Paired Rebuild Study of npm and PyPI}
 \author{Olayinka Vaughan\\
 \small Wesleyan University\\
@@ -22,21 +22,23 @@ A Paired Rebuild Study of npm and PyPI}
 \begin{abstract}
 Build provenance on npm and PyPI says which source commit and workflow
 produced a package, and a verifier can check that claim by rebuilding the
-package and comparing the result with what the registry serves. A
-rebuild that downloads dependencies from the network, though, can be
-steered by whoever controls those downloads. We measure how many attested
-releases still verify when the rebuild runs with the network off and every
-dependency must come from a hash-pinned lock in the attested commit. For
-600 npm and 600 PyPI releases drawn at random from the deps.dev snapshot of
-9 November 2026, each release was rebuilt three ways with the same
-recipe: network off, network on, and network off with a lock inferred at
-publish time. On npm, 22.3\% of releases verify with the network off and
-30.2\% with it, a paired difference of 7.8 percentage points (95\% CI 5.7
-to 10.0; exact McNemar $p = 1.4\times10^{-14}$). No release verified
-offline that failed online. On PyPI, no release verifies offline because
-none commits a build lock, while 71.2\% verify online and 69.5\% verify
-offline from an inferred lock. Almost all of the gap is a missing or
-incomplete lock, not a build that needs the network.
+package and comparing the result with what the registry serves. A rebuild
+whose container can download dependencies trusts whatever it receives at
+build time. We measure how many attested releases still verify when the
+build container has no network and every dependency must come from a
+hash-pinned lock committed at the attested commit. For 600 npm and 600
+PyPI releases drawn at random from the deps.dev snapshot of 9 November
+2026, each release was rebuilt three ways with the same recipe: an
+isolated build from a committed lock, a networked build, and an isolated
+build from a lock inferred at publish time. On npm, 22.3\% of releases
+verify in the isolated build and 30.2\% in the networked one, a paired
+difference of 7.8 percentage points (95\% CI 5.7 to 10.0; exact McNemar
+$p = 1.4\times10^{-14}$). No release verified only in the isolated build,
+and 45 of the 47 releases that verified only with the network lacked a
+usable committed lock. On PyPI, none of the 558 releases whose source
+could be retrieved had a committed lock in the format the verifier
+accepts, so none verified in the isolated build, while 71.2\% verified
+with the network and 69.5\% in the isolated build from an inferred lock.
 \end{abstract}
 
 \section{Introduction}
@@ -54,29 +56,35 @@ has to rebuild from the commit and compare
 
 Two recent studies measure how often such rebuilds succeed across
 ecosystems \cite{solarin2026,dietrich2026}. Neither reports whether its
-rebuilds had network access. The question matters for security. A rebuild
-that resolves dependencies from the registry trusts the registry and the
-network at verification time, and can be made to agree with a tampered
-artifact. A rebuild that runs with the network off, installing only
-dependencies whose hashes are fixed by a lock in the attested commit,
-trusts only what the provenance names.
+builds had network access. That matters for security. A build container
+that resolves dependencies from the registry accepts whatever the registry
+and network return during verification. A network-isolated build, whose
+dependencies are fetched beforehand and checked against hashes in a lock
+at the attested commit, narrows that trust to the lock, the hashes, and
+the verifier that fetches and checks the archives.
 
 We ask how much verifiability that stricter setting costs.
 
 \begin{itemize}
 \item \textbf{Q1.} For attested npm and PyPI releases, how many verify
-with the network off, how many with it on, and how large is the paired
-difference?
-\item \textbf{Q2.} Where do releases fail without the network: missing
+with a network-isolated build from a committed lock, how many with a
+networked build, and how large is the paired difference?
+\item \textbf{Q2.} Where do releases fail in the isolated build: missing
 lock, lock without hashes, a lock entry that needs the network, the build,
 or the comparison?
 \end{itemize}
 
+The difference between these two settings combines two things: whether
+the build can reach the network, and whether dependencies must be pinned
+by a lock the project committed. We measure them together because that
+combination is what a verifier that trusts only the provenance must
+require. A third setting, an isolated build from a lock inferred at
+publish time, separates the two in part.
+
 The study plan, including the sample, arms, outcomes and test, was fixed
-and committed before any rebuild ran; deviations are logged with dates in
-the repository. A third question, on what the comparison rules used by
-rebuild verifiers let through, is under coordinated disclosure with the
-maintainers concerned and will be added in a later version of this paper.
+and committed before any main-study rebuild ran. A pilot on a separately
+drawn sample came first, to debug the tooling; its results are not
+reported. Changes to the plan are logged with dates in the repository.
 
 \section{Method}
 
@@ -92,9 +100,11 @@ deps.dev records about one attestation per PyPI version, usually a
 wheel's, so PyPI candidates were screened in draw order through PyPI's
 Integrity API, keeping releases with exactly one sdist that has its own
 provenance, until 600 were kept. Of 629 screened, 27 had no sdist and 2
-were missing from PyPI; none had an sdist without provenance. At 600
-releases per ecosystem, a 95\% Wilson interval for any single rate is at
-most $\pm4.0$ percentage points wide.
+were missing from PyPI; none had an sdist without provenance. The two
+samples are therefore selected differently, and differences between
+ecosystems should be read with that in mind. At 600 releases per
+ecosystem, a 95\% Wilson interval for any single rate is at most
+$\pm4.0$ percentage points wide.
 
 \subsection{Rebuilds}
 
@@ -103,25 +113,24 @@ verifier, with the same tool version, container image and recipe. Only
 the source of dependencies differed.
 
 \begin{description}
-\item[Arm H (network off).] The shipped verifier. Dependencies come only
-from a lock committed at the attested commit (npm, pnpm or Yarn locks with
-SHA-256 or stronger hashes; for PyPI, a \texttt{pylock.toml}
-\cite{pylock} covering the build backend). The host downloads and checks
-each archive; the build container has no network.
-\item[Arm N (network on).] The container can reach the registry. npm runs
-\texttt{npm ci} with a lock, or \texttt{npm install --before} the publish
-time without one; pip resolves with \texttt{PIP\_UPLOADED\_PRIOR\_TO} set
-to the publish time.
-\item[Arm I (inferred lock, network off).] When the commit has no lock arm
-H accepts, a networked container writes a hash-pinned lock as of the
-publish time, and the build then runs as in arm H. Arm I separates
-``the project committed no usable lock'' from ``the build needs the
-network.''
+\item[Arm H (isolated, committed lock).] The shipped verifier.
+Dependencies come only from a lock committed at the attested commit: npm,
+pnpm or Yarn locks with SHA-256 or stronger hashes, and for PyPI a
+\texttt{pylock.toml} \cite{pylock} at the repository root covering the
+build backend. The host downloads each archive and checks its hash; the
+build container has no network.
+\item[Arm N (networked).] The container can reach the registry. npm runs
+\texttt{npm ci} with a lock, or \texttt{npm install -{}-before} the
+publish time without one; pip resolves with
+\texttt{PIP\_UPLOADED\_PRIOR\_TO} set to the publish time.
+\item[Arm I (isolated, inferred lock).] When the commit has no lock arm H
+accepts, a networked container writes a hash-pinned lock as of the
+publish time, and the build then runs as in arm H.
 \end{description}
 
 Sources are fetched at depth one, as \texttt{actions/checkout} does by
-default, and the checked-out commit must equal the attested one. Each rebuild
-has a 30-minute limit. The build host is Linux on ARM64.
+default, and the checked-out commit must equal the attested one. Each
+rebuild has a 30-minute limit. The build host is Linux on ARM64.
 
 \subsection{Outcomes and analysis}
 
@@ -134,42 +143,49 @@ compares that file with its keys sorted, ignores npm's root
 \texttt{.npmignore} and an sdist's \texttt{PKG-INFO},
 \texttt{*.egg-info} and \texttt{*.dist-info} files, and skips symbolic
 links. We also report T0, a strict comparison without any of those
-rules, in which a symbolic link counts with its target. Every failed rebuild is assigned the first
-stage it failed at, and a reason within the stage from its error text,
-using a fixed mapping committed with the analysis code.
+rules, in which a symbolic link counts with its target. Every failed
+rebuild is assigned the first stage it failed at, and a reason within the
+stage from its error text, using a fixed mapping committed with the
+analysis code.
 
 The confirmatory test is an exact McNemar test \cite{mcnemar1947} of arm H
 against arm N per ecosystem, Holm-corrected \cite{holm1979} across
-ecosystems at $\alpha = 0.05$. The plan made an ecosystem with fewer
-than 10 arm-H matches descriptive only. Single rates carry Wilson
-intervals \cite{wilson1927} and paired differences Newcombe's
-interval for paired proportions \cite{newcombe1998}. Because some
-repositories publish several sampled packages (one npm monorepo
-contributes 15), we repeat the primary estimate with a repository-level
-cluster bootstrap and with one release per repository.
+ecosystems at $\alpha = 0.05$. The plan made an ecosystem with fewer than
+10 arm-H matches descriptive only: with almost no matches in one arm, the
+test can only confirm the obvious and says nothing about how often the
+isolated build succeeds. Single rates carry Wilson intervals
+\cite{wilson1927} and paired differences Newcombe's interval for paired
+proportions \cite{newcombe1998}. Because some repositories publish
+several sampled packages (one npm monorepo contributes 15), we repeat the
+primary estimate with a repository-level cluster bootstrap and with one
+release per repository.
 
 \subsection{Run and reruns}
 
 The main run produced all 3,600 records with the tool frozen at a tagged
-commit. Reruns followed rules written before any match rate was examined:
-two records that failed on Docker errors were rerun; 73 releases that
-stopped at the source stage were retried once and none recovered; and a
-second tagged version, fixing a hash check for pinned Yarn releases and
-isolating Git from the host's configuration, reran the 11 releases those
-two bugs affected. No release is missing from the analysis.
+commit. Reruns followed rules written before any main-study match rate was
+examined. Two records that failed on Docker errors were rerun. The 73
+releases that stopped at the source stage were retried once with the same
+tool, and none recovered. Of those 73, 9 had failed because the build
+host's Git configuration installed a Git LFS filter that broke checkout,
+and 2 others were rejected by a hash check that compared a pinned Yarn
+release against the wrong file. A second tagged version, which isolates
+Git from the host configuration and fixes that check, reran these 11
+releases. The 9 then passed the source stage, which leaves 64 releases
+at that stage in the final data. No release is missing from the analysis.
 
 \section{Results}
 
-\subsection{Q1: verification with and without the network}
+\subsection{Q1: isolated against networked builds}
 
-\begin{table}[t]
+\begin{table}[htbp]
 \centering
 \caption{Releases that verify (T1), by arm. Brackets: 95\% Wilson
 interval.}
 \label{tab:rates}
 \begin{tabular}{lrrr}
 \toprule
-& Arm H (off) & Arm N (on) & Arm I (inferred) \\
+& Arm H (isolated) & Arm N (networked) & Arm I (inferred) \\
 \midrule
 npm ($n=600$) & 134 (22.3\%) & 181 (30.2\%) & 162 (27.0\%) \\
 & [19.2, 25.8] & [26.6, 34.0] & [23.6, 30.7] \\
@@ -187,29 +203,33 @@ both arm H and arm N, 47 only in arm N, none only in arm H, and 419 in
 neither. The paired difference is 7.8 percentage points (95\% CI 5.7 to
 10.0), and the exact McNemar test gives $p = 1.4\times10^{-14}$; with npm
 the only ecosystem in the test family, the Holm-adjusted $p$ is the same.
-Clustering does not change this: the repository bootstrap gives 5.8 to
-10.1 over 569 repositories, and counting one release per repository gives
-8.3 points (6.0 to 10.6).
+Repository-clustered sensitivity analyses gave similar estimates: the
+bootstrap interval is 5.8 to 10.1 over 569 repositories, and counting one
+release per repository gives 8.3 points (6.0 to 10.6).
 
-PyPI met the degenerate-case rule. No release verified in arm H, because
-none of the 600 commits a \texttt{pylock.toml}. With the network, 427
-verify, and with an inferred lock and the network off, 417 do. PyPI builds
-therefore work offline almost as well as online once the build backend is
-pinned; the obstacle is that projects do not commit that pin.
+PyPI met the descriptive-only rule. Of its 600 releases, 42 could not be
+checked out at the attested commit. None of the other 558 had a committed
+\texttt{pylock.toml} at the repository root, so none verified in arm H.
+With the network, 427 verify, and from an inferred lock in an isolated
+build, 417 do. This result is specific to the verifier's lock policy: it
+does not accept named PEP 751 lock files such as
+\texttt{pylock.build.toml} or other ways of recording a build closure,
+and a verifier that did might do better.
 
-The secondary contrasts show the same thing on npm. An inferred lock
+The secondary contrasts on npm point the same way. An inferred lock
 recovers 28 of the 47 releases that verify only with the network (arm I
 minus arm H: 4.7 points, 3.0 to 6.4), and arm N still verifies 19 more
 than arm I (3.2 points, 1.8 to 4.6). On PyPI, arm N exceeds arm I by 10
-releases (1.7 points, 0.6 to 2.7). Where arms N and I both verify a
-release, they produce the same tree.
+releases (1.7 points, 0.6 to 2.7).
 
 Strict comparison changes little. T0 is within 6 releases of T1 in every
 npm arm and within 8 in every PyPI arm.
 
-\subsection{Q2: where offline rebuilds fail}
+\subsection{Q2: where isolated builds fail}
 
-\begin{table}[t]
+Table~\ref{tab:stages} gives every release's first failing stage.
+
+\begin{table}[htbp]
 \centering
 \caption{First failing stage and reason, by arm. Reasons come from a
 fixed mapping of error text; ``other'' is anything it does not match.}
@@ -251,50 +271,63 @@ Artifact & unexpected archive layout & 0 & 0 & 0 & 0 & 38 & 37 \\
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:stages} gives every release's first failing stage. Four
-results stand out.
-
-\emph{The lock is the main barrier.} Of the 47 npm releases that verify
-only with the network, 45 stop at the lock stage in arm H: 36 have no
-committed lock, 4 lock dependencies without usable hashes, 4 lock an entry
-the host cannot fetch from the registry (a Git or arbitrary-URL source),
-and 1 uses an unsupported lock version. One more fails because its build
-script downloads at build time, and one builds offline but produces a
+Of the 47 npm releases that verify only with the network, 45 fail a
+dependency-lock requirement in arm H: 36 have no committed lock, 4 lock
+dependencies without usable hashes, 4 lock an entry the host cannot fetch
+from the registry (a Git or arbitrary-URL source), and 1 uses an
+unsupported lock version. One more fails because its build script
+downloads at build time, and one builds in isolation but produces a
 different tree. Across all npm releases, 130 commit no lock at all.
 
-\emph{Few builds need the network beyond their dependencies.} Only 10
-npm rebuilds failed in arm H because the build itself reached for the
-network. With the network, only one of those 10 verifies; four build but
-differ from the registry, and five fail to build.
+Only 10 npm rebuilds failed in arm H because the build itself, as
+opposed to dependency installation, reached for the network. With the
+network, only one of those 10 verifies; four build but differ from the
+registry, and five fail to build.
 
-\emph{Many failures are independent of the network.} The largest npm
-build failure, in every arm, is that the package's published version does
-not appear in any \texttt{package.json} at the attested commit, because
-the publish workflow sets the version. A rebuild from the commit cannot
-reproduce such a package without replaying that step. TypeScript and
-Node-engine failures are similar: the recipe is not the publisher's
-workflow.
+The largest npm build failure, in every arm, is that the package's
+published version does not appear in any \texttt{package.json} at the
+attested commit, because the publish workflow sets the version. A rebuild
+from the commit cannot reproduce such a package without replaying that
+step. TypeScript and Node-engine failures are similar: the recipe is not
+the publisher's workflow, so these failures say more about the recipe
+than about network access.
 
-\emph{Provenance is not always checkable later.} For 64 releases (22
-npm, 42 PyPI) the attested commit can no longer be fetched, mostly because
-the repository has been deleted or made private. For 32 npm releases the
-signing workflow lives in a different repository from the attested
-source (a shared release workflow), which ClearHash rejects because it
-cannot tie the signer to the source.
+For 64 releases (22 npm, 42 PyPI) the attested commit could not be
+fetched, mostly because the repository has been deleted or made private;
+none recovered on the prescribed retry. For 32 npm releases the signing
+workflow lives in a different repository from the attested source (a
+shared release workflow), which ClearHash rejects because it cannot tie
+the signer to the source.
 
 \section{Limitations}
 
-Absolute rates are lower bounds. The recipe is a generic one, not each
-publisher's workflow, and the build host is Linux on ARM64, so packages
-that build only elsewhere fail in every arm. The paired difference is not
-affected by either, because all three arms share them. The sample covers
-releases with verified provenance only, from one snapshot, and the frame
-reflects what deps.dev recorded. Sources are fetched at depth one, so
-builds that read Git history see a single commit in every arm. The
-retry of source failures recovered none, so they are not transient, but
-we did not establish the reason for every one. Finally, T1 depends on
-ClearHash's comparison rules at the frozen version; T0 shows the strict
-counts.
+\paragraph{Measurement.} The recipe is generic, not each publisher's
+workflow, and the build host is Linux on ARM64. Many releases fail in
+every arm for these reasons, so the rates likely understate what
+publisher-specific workflows would achieve. Because all three arms share
+the recipe and host, these factors do not differ between arms, but the
+paired difference is still conditional on them: under another recipe or
+architecture, different releases would reach the stage where network
+access and locks matter, and the difference could change. Sources are
+fetched at depth one, so builds that read Git history see a single
+commit in every arm.
+
+\paragraph{Comparison policy.} T1's normalization ignores some metadata
+and symbolic links, so its rates are less conservative than a strict
+comparison; T0 reports the strict counts, which differ by at most 8
+releases in any arm. The PyPI result in arm H reflects ClearHash's
+requirement of a root \texttt{pylock.toml} and is not a general finding
+about whether PyPI builds can be verified offline.
+
+\paragraph{Sampling.} The sample covers releases with verified
+provenance only, from one snapshot, and the frame reflects what deps.dev
+recorded. npm and PyPI releases were selected by different eligibility
+rules, so the two ecosystems are not directly comparable.
+
+\paragraph{Isolation.} Arm H isolates the build container, not the whole
+verification: a networked host still downloads the dependency archives
+and checks them against the lock's hashes. The approach trusts the lock,
+the hash functions, and that prefetch step.
 
 \section{Related work}
 
@@ -304,19 +337,19 @@ levels, and Dietrich et al.\ \cite{dietrich2026} compare alternatively
 built PyPI wheels. OSS Rebuild \cite{ossrebuild} rebuilds packages from
 several ecosystems and publishes attestations of the result. These works
 report how often rebuilds succeed; this study isolates what network
-access at verification time contributes, with the same releases rebuilt
+access and a committed lock contribute, with the same releases rebuilt
 both ways.
 
 \section{Conclusion}
 
-Verifying attested npm and PyPI releases with the network off costs
-little in what the builds need and a lot in what projects commit. On npm,
-offline verification covers about three quarters of what networked
-verification does, and the difference is almost entirely missing or
-incomplete locks. On PyPI, inferred locks show that builds would verify
-offline at nearly the networked rate, if projects committed a lock for
-their build backend. Registries that accept provenance could ask for that
-lock at publish time.
+On npm, network-isolated verification from committed locks covers about
+three quarters of what networked verification does, and 45 of the 47
+releases lost in the isolated setting lack a usable committed lock. On
+PyPI, no sampled project committed a lock in the form the verifier
+accepts, while builds from inferred locks verified at nearly the
+networked rate. In both ecosystems, more verifiable releases would
+follow from projects committing hash-pinned locks for their builds, and
+registries that accept provenance could encourage that at publish time.
 
 \section*{Availability}
 
