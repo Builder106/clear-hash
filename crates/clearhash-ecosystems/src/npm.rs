@@ -285,16 +285,18 @@ impl EcosystemAdapter for NpmAdapter {
         if path != "package.json" {
             return bytes;
         }
-        // Strip the four registry-injected metadata fields. We do a structural rewrite
+        // Strip the registry-injected metadata fields. We do a structural rewrite
         // rather than a regex so we don't corrupt source-controlled values that happen to
-        // contain the same key names.
+        // contain the same key names. Key order is kept (serde_json's preserve_order):
+        // npm resolves conditional `exports` in declaration order, so reordering keys
+        // can change which file a consumer loads.
         let mut v: serde_json::Value = match serde_json::from_slice(&bytes) {
             Ok(v) => v,
             Err(_) => return bytes,
         };
         if let Some(obj) = v.as_object_mut() {
             for key in ["_id", "_integrity", "_resolved", "_from", "dist"] {
-                obj.remove(key);
+                obj.shift_remove(key);
             }
         }
         serde_json::to_vec_pretty(&v).unwrap_or(bytes)
@@ -461,6 +463,27 @@ fn base64_decode_standard(s: &str) -> Result<Vec<u8>, String> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn package_json_key_order_is_kept() {
+        let adapter = NpmAdapter::default();
+        let a = adapter.normalize_file(
+            "package.json",
+            br#"{"name":"x","_id":"x@1","exports":{"node":"./evil.js","default":"./good.js"}}"#
+                .to_vec(),
+        );
+        let b = adapter.normalize_file(
+            "package.json",
+            br#"{"name":"x","exports":{"default":"./good.js","node":"./evil.js"}}"#.to_vec(),
+        );
+        assert_ne!(a, b);
+        let c = adapter.normalize_file(
+            "package.json",
+            br#"{"name":"x","exports":{"node":"./evil.js","default":"./good.js"},"dist":{}}"#
+                .to_vec(),
+        );
+        assert_eq!(a, c);
+    }
     use super::*;
     use clearhash_core::Ecosystem;
 
