@@ -68,6 +68,17 @@ enum Command {
         #[arg(long)]
         target: usize,
     },
+    /// Compare two local archives as the study does (T1 and T0) and print JSON.
+    /// Used by the Q3 fixtures to put ClearHash's verdict next to installer behavior.
+    CompareArchives {
+        /// `<ecosystem>:<name>@<version>`, which selects the adapter and archive prefix.
+        #[arg(long)]
+        package: String,
+        #[arg(long)]
+        registry: PathBuf,
+        #[arg(long)]
+        rebuild: PathBuf,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ValueEnum)]
@@ -267,7 +278,32 @@ async fn main() -> Result<()> {
             screened,
             target,
         } => screen_pypi(&candidates, &sample, &screened, target).await,
+        Command::CompareArchives {
+            package,
+            registry,
+            rebuild,
+        } => compare_archives(&package, &registry, &rebuild),
     }
+}
+
+fn compare_archives(package: &str, registry: &Path, rebuild: &Path) -> Result<()> {
+    let pkg: PackageRef = package.parse()?;
+    let adapter = for_ecosystem(pkg.ecosystem);
+    let work = tempfile::tempdir()?;
+    let registry_root = clearhash_sandbox::extract_archive(
+        &*adapter,
+        registry,
+        &pkg,
+        &work.path().join("registry"),
+    )?;
+    let rebuild_root =
+        clearhash_sandbox::extract_archive(&*adapter, rebuild, &pkg, &work.path().join("rebuild"))?;
+    let t1: Comparison =
+        clearhash_sandbox::compare_trees(&*adapter, &registry_root, &rebuild_root)?.into();
+    let t0: Comparison =
+        clearhash_sandbox::compare_trees_strict(&registry_root, &rebuild_root)?.into();
+    println!("{}", serde_json::json!({ "t1": t1, "t0": t0 }));
+    Ok(())
 }
 
 fn read_jsonl<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Vec<T>> {
