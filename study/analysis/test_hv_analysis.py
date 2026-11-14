@@ -80,6 +80,24 @@ def fixture_release(system, name, repo):
     return {"system": system, "name": name, "version": "1.0.0", "source_repo": repo}
 
 
+class Reasons(unittest.TestCase):
+    def test_error_text_maps_to_sub_reasons(self):
+        cases = [
+            ("lock", "unsupported or invalid rebuild: offline npm requires a committed package-lock.json", "no committed lock"),
+            ("lock", "unsupported or invalid rebuild: missing dependency integrity", "lock without usable hashes"),
+            ("build", "stderr tail: clearhash: could not locate x@1.0.0 in source tree", "version not in source tree"),
+            ("build", "timeout: container exceeded the 1800s time limit", "timeout"),
+            ("source", "git: git fetch --quiet origin failed", "attested commit unavailable"),
+            ("build", "stderr tail: npm error code ENOTCACHED", "build tried to use the network"),
+            ("build", "src/a.ts(3,1): error TS2307: Cannot find module", "TypeScript compile failed"),
+            ("lock", "resolver: rebuild script exited with status 1", "lock inference failed"),
+            ("build", "something new", "other"),
+        ]
+        for stage, error, label in cases:
+            self.assertEqual(hv.reason({"stage": stage, "error": error}), label, error)
+        self.assertIsNone(hv.reason({"stage": "compared"}))
+
+
 class Analysis(unittest.TestCase):
     def test_last_record_wins_and_infrastructure_releases_are_missing(self):
         sample = [fixture_release("NPM", "a", "https://github.com/x/a"),

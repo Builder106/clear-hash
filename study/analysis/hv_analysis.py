@@ -42,6 +42,40 @@ BOOTSTRAP_SEED = "clearhash-hv-2026-11"
 ALPHA = 0.05
 
 
+# Sub-reasons within a stage, assigned from the raw error text (the plan's
+# committed mapping). The first matching rule wins; anything else is "other".
+REASONS = [
+    ("lock", r"requires a committed (package-lock\.json|pylock\.toml)", "no committed lock"),
+    ("lock", r"missing dependency integrity|integrity must use SHA-256|missing locked version", "lock without usable hashes"),
+    ("lock", r"requires lockfileVersion", "unsupported lock version"),
+    ("lock", r"need the network|needs the network|variations source", "lock entry needs the network"),
+    ("lock", r"^resolver:|get_requires_for_build", "lock inference failed"),
+    ("attestation", r"leaf certificate SAN identity .* does not match", "signing workflow in another repository"),
+    ("source", r"git fetch|update-ref", "attested commit unavailable"),
+    ("source", r"git checkout", "checkout failed"),
+    ("build", r"could not locate .* in source tree", "version not in source tree"),
+    ("build", r"exceeded the \d+s time limit", "timeout"),
+    ("build", r"ENOTCACHED|EAI_AGAIN|getaddrinfo|ERR_PNPM_META_FETCH_FAIL", "build tried to use the network"),
+    ("build", r"EBADENGINE|ERR_PNPM_UNSUPPORTED_ENGINE", "engine version mismatch"),
+    ("build", r"\bTS\d{4}\b|\btsc\b", "TypeScript compile failed"),
+    ("build", r"build_sdist|build_wheel|isolated environment", "build backend failed"),
+    ("artifact", r"expected top-level directory", "unexpected archive layout"),
+    ("dependencies", r"integrity mismatch", "integrity mismatch"),
+    ("fetch", r"404", "artifact missing from registry"),
+]
+
+
+def reason(record):
+    """Sub-reason label for a failed record, or None for a compared one."""
+    if record["stage"] == "compared":
+        return None
+    text = record.get("error") or ""
+    for stage, pattern, label in REASONS:
+        if record["stage"] == stage and re.search(pattern, text):
+            return label
+    return "other"
+
+
 def read_jsonl(path):
     with open(path) as handle:
         return [json.loads(line) for line in handle if line.strip()]
@@ -214,6 +248,12 @@ def analyse(sample, ledger, screened=None, reruns=()):
                 "t0_rate": t0 / n if n else math.nan,
                 "t0_wilson95": list(wilson(t0, n)),
                 "stages": dict(sorted(stages.items())),
+                "reasons": dict(sorted(collections.Counter(
+                    f"{r[arm]['stage']}: {reason(r[arm])}" for r in rows if r[arm]["stage"] != "compared"
+                ).items())),
+                "compared_not_matched": sum(
+                    r[arm]["stage"] == "compared" and not matched(r[arm], "t1") for r in rows
+                ),
             }
         summary["arm_i_lock_source"] = dict(
             collections.Counter(r["i"].get("lock_source") or "none" for r in rows)
