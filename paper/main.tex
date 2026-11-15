@@ -20,9 +20,10 @@ A Paired Rebuild Study of npm and PyPI}
 \maketitle
 
 \begin{abstract}
-Build provenance on npm and PyPI says which source commit and workflow
-produced a package, and a verifier can check that claim by rebuilding the
-package and comparing the result with what the registry serves. A build
+Signed attestations on npm and PyPI name the source commit and workflow
+behind a package, and a verifier can check that the package matches the
+commit by rebuilding it and comparing the result with what the registry
+serves. A build
 container with network access can fetch dependencies and other content
 that no committed hash pins. I measure how many attested releases still
 verify when the build container has no network and its dependencies must
@@ -48,12 +49,16 @@ build under that policy, while 71.2\% verified with the network and
 Attacks on open-source supply chains often go through the path from source
 to published artifact: a compromised build machine, a stolen publishing
 token, or a release step that adds code not in the repository
-\cite{ohm2020,ladisa2023}. Build provenance answers part of this. npm and
-PyPI now accept Sigstore-signed statements \cite{newman2022} in the SLSA
-format \cite{slsa,npmprov,pep740} that name the repository, commit and
-workflow behind a release. The signature ties that statement to a
-signing identity, usually a CI workflow. It does not show that the
-package's contents match the commit. For that, a verifier
+\cite{ohm2020,ladisa2023}. Signed attestations answer part of this.
+npm accepts Sigstore-signed \cite{newman2022} SLSA provenance
+\cite{slsa,npmprov} that names the repository, commit and workflow that
+built a release. PyPI accepts Sigstore-signed publish attestations
+\cite{pep740}, which identify the trusted publisher, including the
+workflow and the commit that workflow ran from. In this paper an
+attestation is \emph{verified} when its signature and signing identity
+check out. That ties a release to a workflow run and its source commit.
+It does not show that the package's contents were built from that
+commit. For that, a verifier
 has to rebuild from the commit and compare
 \cite{lamb2022,ossrebuild}.
 
@@ -79,9 +84,8 @@ or the comparison?
 
 The difference between these two settings combines two things: whether
 the build can reach the network, and whether dependencies must be pinned
-by a lock the project committed. I measure them together because that
-combination is what a verifier that trusts only the provenance must
-require. A third setting, an isolated build from a lock inferred as of
+by a lock the project committed. I measure them together because a
+verifier that builds without the network needs both. A third setting, an isolated build from a lock inferred as of
 the publication date, separates the two in part.
 
 The study plan, including the sample, arms, outcomes and test, was fixed
@@ -105,8 +109,11 @@ so the draw can be repeated exactly. I take the first 600 npm packages.
 deps.dev records about one attestation per PyPI version, usually a
 wheel's, so PyPI candidates were screened in draw order through PyPI's
 Integrity API, keeping releases with exactly one sdist that has its own
-provenance, until 600 were kept. Of 629 screened, 27 had no sdist and 2
-were missing from PyPI; none had an sdist without provenance. The two
+attestation, until 600 were kept. These are publish attestations; a check
+of 25 sampled releases found no other type. ClearHash takes the commit
+from the signing certificate, which records the commit the publishing
+workflow ran from. Of 629 screened, 27 had no sdist and 2
+were missing from PyPI; none had an sdist without an attestation. The two
 samples are therefore selected differently, and differences between
 ecosystems should be read with that in mind. At 600 releases per
 ecosystem, a 95\% Wilson interval for any single rate has a half-width
@@ -115,8 +122,8 @@ of at most 4.0 percentage points.
 \subsection{Rebuilds}
 
 Each release was rebuilt in three arms by ClearHash, an open-source
-verifier, with the same tool version, container image and build
-recipe. The arms differ in how dependencies are obtained and installed.
+verifier, with the same container image and build recipe, and with one
+tool version for all three arms of a release. The arms differ in how dependencies are obtained and installed.
 
 \begin{description}
 \item[Arm H (isolated, committed lock).] The shipped verifier.
@@ -183,15 +190,18 @@ release per repository.
 
 The main run produced all 3,600 records with the tool frozen at a tagged
 commit. Reruns followed rules written before any main-study match rate was
-examined. Two records that failed on Docker errors were rerun. The 73
-releases that stopped at the source stage were retried once with the same
-tool, and none recovered. Of those 73, 9 had failed because the build
-host's Git configuration installed a Git LFS filter that broke checkout,
-and 2 others were rejected by a hash check that compared a pinned Yarn
-release against the wrong file. A second tagged version, which isolates
-Git from the host configuration and fixes that check, reran these 11
-releases. The 9 then passed the source stage, which leaves 64 releases
-at that stage in the final data. No release is missing from the analysis.
+examined, though one of them was added after the source-stage outcomes
+had been seen. Two records that failed on Docker errors were rerun. The
+73 releases that stopped at the source stage were retried once with the
+same tool, and none recovered. Nine of those 73 had failed because the
+build host's Git configuration installed a Git LFS filter that broke
+checkout. Two further releases, which had failed at the dependency
+stage, were rejected by a hash check that compared a pinned Yarn release
+against the wrong file. A second tagged version, which isolates Git from
+the host configuration and fixes that check, reran these 11 releases in
+all three arms. The 9 then passed the source stage, which leaves 64
+releases at that stage in the final data. No release is missing from the
+analysis.
 
 \section{Results}
 
@@ -240,8 +250,8 @@ release that verifies in arm H also verifies in arm I, and every release
 that verifies in arm I also verifies in arm N. On npm, an inferred lock
 recovers 28 of the 47 releases that verify only with the network (arm I
 minus arm H: 4.7 points, 3.0 to 6.4), and arm N still verifies 19 more
-than arm I (3.2 points, 1.8 to 4.6). On PyPI, arm N exceeds arm I by 10
-releases (1.7 points, 0.6 to 2.7).
+than arm I (3.2 points, 1.7 to 4.6). On PyPI, arm N exceeds arm I by 10
+releases (1.7 points, 0.6 to 2.8).
 
 Strict comparison changes little. T0 is within 6 releases of T1 in every
 npm arm and within 8 in every PyPI arm.
@@ -298,7 +308,9 @@ dependencies without usable hashes, 4 lock an entry the host cannot fetch
 from the registry (a Git or arbitrary-URL source), and 1 uses an
 unsupported lock version. One more fails because its build script
 downloads at build time, and one builds in isolation but produces a
-different tree. Across all npm releases, 130 commit no lock at all.
+different tree. Of the 545 npm releases that reached the lock stage in
+arm H, 130 had no committed lock; releases that failed earlier were not
+checked for one.
 
 Only 10 npm rebuilds failed in arm H because the build itself, as
 opposed to dependency installation, reached for the network. With the
@@ -341,7 +353,7 @@ requirement of a root \texttt{pylock.toml} and is not a general finding
 about whether PyPI builds can be verified offline.
 
 \paragraph{Sampling.} The sample covers releases with verified
-provenance only, from one snapshot, and the frame reflects what deps.dev
+attestations only, from one snapshot, and the frame reflects what deps.dev
 recorded. npm and PyPI releases were selected by different eligibility
 rules, so the two ecosystems are not directly comparable.
 
@@ -356,7 +368,10 @@ not checked. The two Yarn~2+ releases include
 on registry integrity. Of the 59 matches that needed pnpm or Yarn, 46
 took that tool's release on the registry's published integrity, because
 the project pinned a version without a hash or used pnpm~12, whose native
-binary no project pin covers.
+binary no project pin covers. Where a check relies on the registry's
+published integrity, someone able to change both that metadata and the
+archive the registry serves could substitute the archive without the
+check failing.
 
 \section{Related work}
 
@@ -377,12 +392,12 @@ it, and with and without a committed lock.
 On npm, network-isolated verification from committed locks covers about
 three quarters of what networked verification does, and 45 of the 47
 releases lost in the isolated setting lack a usable committed lock. On
-PyPI, no sampled project committed a lock in the form the verifier
-accepts, while builds from inferred locks verified at nearly the
+PyPI, none of the 558 releases whose source could be retrieved had a
+root \texttt{pylock.toml}, the one lock form the verifier accepts, while builds from inferred locks verified at nearly the
 networked rate. These results suggest that committing complete,
 hash-pinned locks for the build, in a form verifiers accept, could raise
 isolated verification coverage where the rest of the build is
-reproducible. Registries that accept provenance could encourage such
+reproducible. Registries that accept attestations could encourage such
 locks at publish time.
 
 \section*{Availability}
