@@ -48,8 +48,8 @@ build under that policy, while 71.2\% verified with the network and
 Open-source supply-chain attacks can compromise the steps between a
 source commit and the artifact published to a registry: a compromised
 build machine, a stolen publishing token, or a release step that adds
-code not in the repository \cite{ohm2020,ladisa2023}. npm accepts Sigstore-signed \cite{newman2022} SLSA provenance
-\cite{slsa,npmprov} that names the repository, commit and workflow that
+code not in the repository \cite{ladisa2023,ohm2020}. npm accepts Sigstore-signed \cite{newman2022} SLSA provenance
+\cite{npmprov,slsa} that names the repository, commit and workflow that
 built a release. PyPI accepts Sigstore-signed publish attestations
 \cite{pep740}, which identify the trusted publisher, including the
 workflow and the commit that workflow ran from. In this paper an
@@ -61,7 +61,7 @@ has to rebuild from the commit and compare
 \cite{lamb2022,ossrebuild}.
 
 Two recent studies measure how often such rebuilds succeed across
-ecosystems \cite{solarin2026,dietrich2026}. Neither reports whether its
+ecosystems \cite{dietrich2026,solarin2026}. Neither reports whether its
 builds had network access. A networked build
 can resolve versions the project never pinned and download content during
 the build, and a lockfile's integrity checks cover only the dependencies
