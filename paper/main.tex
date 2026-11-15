@@ -23,9 +23,8 @@ A Paired Rebuild Study of npm and PyPI}
 Signed attestations on npm and PyPI name the source commit and workflow
 behind a package, and a verifier can check that the package matches the
 commit by rebuilding it and comparing the result with what the registry
-serves. A build
-container with network access can fetch dependencies and other content
-that no committed hash pins. I measure how many attested releases still
+serves. A networked build container can download dependencies and other
+content that are not pinned by hashes committed to the repository. I measure how many attested releases still
 verify when the build container has no network and its dependencies must
 come from a lock committed at the attested commit, downloaded and checked
 before the build. For 600 npm and 600
@@ -46,11 +45,10 @@ build under that policy, while 71.2\% verified with the network and
 
 \section{Introduction}
 
-Attacks on open-source supply chains often go through the path from source
-to published artifact: a compromised build machine, a stolen publishing
-token, or a release step that adds code not in the repository
-\cite{ohm2020,ladisa2023}. Signed attestations answer part of this.
-npm accepts Sigstore-signed \cite{newman2022} SLSA provenance
+Open-source supply-chain attacks can compromise the steps between a
+source commit and the artifact published to a registry: a compromised
+build machine, a stolen publishing token, or a release step that adds
+code not in the repository \cite{ohm2020,ladisa2023}. npm accepts Sigstore-signed \cite{newman2022} SLSA provenance
 \cite{slsa,npmprov} that names the repository, commit and workflow that
 built a release. PyPI accepts Sigstore-signed publish attestations
 \cite{pep740}, which identify the trusted publisher, including the
@@ -64,7 +62,7 @@ has to rebuild from the commit and compare
 
 Two recent studies measure how often such rebuilds succeed across
 ecosystems \cite{solarin2026,dietrich2026}. Neither reports whether its
-builds had network access. That matters for security. A networked build
+builds had network access. A networked build
 can resolve versions the project never pinned and download content during
 the build, and a lockfile's integrity checks cover only the dependencies
 it lists. A network-isolated build installs only archives fetched
@@ -114,8 +112,9 @@ of 25 sampled releases found no other type. ClearHash takes the commit
 from the signing certificate, which records the commit the publishing
 workflow ran from. Of 629 screened, 27 had no sdist and 2
 were missing from PyPI; none had an sdist without an attestation. The two
-samples are therefore selected differently, and differences between
-ecosystems should be read with that in mind. At 600 releases per
+samples are therefore selected differently: because the PyPI sample
+additionally required an attested sdist, the npm and PyPI verification
+rates are not directly comparable. At 600 releases per
 ecosystem, a 95\% Wilson interval for any single rate has a half-width
 of at most 4.0 percentage points.
 
@@ -227,7 +226,7 @@ PyPI, strict (T0) & 0 & 419 & 409 \\
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:rates} gives the rates. On npm, 134 releases verify in
+On npm, 134 releases verify in
 both arm H and arm N, 47 only in arm N, none only in arm H, and 419 in
 neither. The paired difference is 7.8 percentage points (95\% CI 5.7 to
 10.0), and the exact McNemar test gives $p = 1.4\times10^{-14}$; with npm
@@ -253,8 +252,8 @@ minus arm H: 4.7 points, 3.0 to 6.4), and arm N still verifies 19 more
 than arm I (3.2 points, 1.7 to 4.6). On PyPI, arm N exceeds arm I by 10
 releases (1.7 points, 0.6 to 2.8).
 
-Strict comparison changes little. T0 is within 6 releases of T1 in every
-npm arm and within 8 in every PyPI arm.
+Switching to T0 removes at most 8 matches in any arm: up to 6 on npm and
+8 on PyPI.
 
 \subsection{Q2: where isolated builds fail}
 
@@ -394,11 +393,10 @@ three quarters of what networked verification does, and 45 of the 47
 releases lost in the isolated setting lack a usable committed lock. On
 PyPI, none of the 558 releases whose source could be retrieved had a
 root \texttt{pylock.toml}, the one lock form the verifier accepts, while builds from inferred locks verified at nearly the
-networked rate. These results suggest that committing complete,
-hash-pinned locks for the build, in a form verifiers accept, could raise
-isolated verification coverage where the rest of the build is
-reproducible. Registries that accept attestations could encourage such
-locks at publish time.
+networked rate. The npm results point to missing or unusable committed
+locks as the main obstacle among releases that otherwise verify with
+network access. The PyPI results point instead to the verifier's narrow
+lock-format requirement.
 
 \section*{Availability}
 
