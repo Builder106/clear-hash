@@ -22,23 +22,25 @@ A Paired Rebuild Study of npm and PyPI}
 \begin{abstract}
 Build provenance on npm and PyPI says which source commit and workflow
 produced a package, and a verifier can check that claim by rebuilding the
-package and comparing the result with what the registry serves. A rebuild
-whose container can download dependencies trusts whatever it receives at
-build time. We measure how many attested releases still verify when the
-build container has no network and every dependency must come from a
-hash-pinned lock committed at the attested commit. For 600 npm and 600
+package and comparing the result with what the registry serves. A build
+container with network access can fetch dependencies and other content
+that no committed hash pins. We measure how many attested releases still
+verify when the build container has no network and its dependencies must
+come from a lock committed at the attested commit, downloaded and checked
+before the build. For 600 npm and 600
 PyPI releases drawn at random from the deps.dev snapshot of 9 November
 2026, each release was rebuilt three ways with the same recipe: an
 isolated build from a committed lock, a networked build, and an isolated
-build from a lock inferred at publish time. On npm, 22.3\% of releases
+build from a lock inferred as of the publication date. On npm, 22.3\% of releases
 verify in the isolated build and 30.2\% in the networked one, a paired
 difference of 7.8 percentage points (95\% CI 5.7 to 10.0; exact McNemar
 $p = 1.4\times10^{-14}$). No release verified only in the isolated build,
 and 45 of the 47 releases that verified only with the network lacked a
 usable committed lock. On PyPI, none of the 558 releases whose source
-could be retrieved had a committed lock in the format the verifier
-accepts, so none verified in the isolated build, while 71.2\% verified
-with the network and 69.5\% in the isolated build from an inferred lock.
+could be retrieved had a committed lock in the one format the verifier
+accepts, a root \texttt{pylock.toml}, so none verified in the isolated
+build under that policy, while 71.2\% verified with the network and
+69.5\% in the isolated build from an inferred lock.
 \end{abstract}
 
 \section{Introduction}
@@ -49,19 +51,20 @@ token, or a release step that adds code not in the repository
 \cite{ohm2020,ladisa2023}. Build provenance answers part of this. npm and
 PyPI now accept Sigstore-signed statements \cite{newman2022} in the SLSA
 format \cite{slsa,npmprov,pep740} that name the repository, commit and
-workflow behind a release. A signature shows who built the package. It
-does not show that the package matches the commit. For that, a verifier
+workflow behind a release. The signature ties that statement to a
+signing identity, usually a CI workflow. It does not show that the
+package's contents match the commit. For that, a verifier
 has to rebuild from the commit and compare
 \cite{lamb2022,ossrebuild}.
 
 Two recent studies measure how often such rebuilds succeed across
 ecosystems \cite{solarin2026,dietrich2026}. Neither reports whether its
-builds had network access. That matters for security. A build container
-that resolves dependencies from the registry accepts whatever the registry
-and network return during verification. A network-isolated build, whose
-dependencies are fetched beforehand and checked against hashes in a lock
-at the attested commit, narrows that trust to the lock, the hashes, and
-the verifier that fetches and checks the archives.
+builds had network access. That matters for security. A networked build
+can resolve versions the project never pinned and download content during
+the build, and a lockfile's integrity checks cover only the dependencies
+it lists. A network-isolated build installs only archives fetched
+beforehand and checked by hash, which leaves less that the verifier has
+to trust at verification time.
 
 We ask how much verifiability that stricter setting costs.
 
@@ -78,13 +81,16 @@ The difference between these two settings combines two things: whether
 the build can reach the network, and whether dependencies must be pinned
 by a lock the project committed. We measure them together because that
 combination is what a verifier that trusts only the provenance must
-require. A third setting, an isolated build from a lock inferred at
-publish time, separates the two in part.
+require. A third setting, an isolated build from a lock inferred as of
+the publication date, separates the two in part.
 
 The study plan, including the sample, arms, outcomes and test, was fixed
 and committed before any main-study rebuild ran. A pilot on a separately
 drawn sample came first, to debug the tooling; its results are not
 reported. Changes to the plan are logged with dates in the repository.
+The plan also includes a third question, on whether the comparison rules
+used by rebuild verifiers can hide changes to what gets installed. It is
+not reported here and is deferred to a later version of this paper.
 
 \section{Method}
 
@@ -103,29 +109,40 @@ provenance, until 600 were kept. Of 629 screened, 27 had no sdist and 2
 were missing from PyPI; none had an sdist without provenance. The two
 samples are therefore selected differently, and differences between
 ecosystems should be read with that in mind. At 600 releases per
-ecosystem, a 95\% Wilson interval for any single rate is at most
-$\pm4.0$ percentage points wide.
+ecosystem, a 95\% Wilson interval for any single rate has a half-width
+of at most 4.0 percentage points.
 
 \subsection{Rebuilds}
 
 Each release was rebuilt in three arms by ClearHash, an open-source
-verifier, with the same tool version, container image and recipe. Only
-the source of dependencies differed.
+verifier, with the same tool version, container image and build
+recipe. The arms differ in how dependencies are obtained and installed.
 
 \begin{description}
 \item[Arm H (isolated, committed lock).] The shipped verifier.
-Dependencies come only from a lock committed at the attested commit: npm,
-pnpm or Yarn locks with SHA-256 or stronger hashes, and for PyPI a
-\texttt{pylock.toml} \cite{pylock} at the repository root covering the
-build backend. The host downloads each archive and checks its hash; the
-build container has no network.
+Dependencies come only from a lock committed at the attested commit: an
+npm, pnpm or Yarn lock, or for PyPI a \texttt{pylock.toml}
+\cite{pylock} at the repository root covering the build backend. The
+host downloads each archive and checks it before the build, which runs
+with no network. For npm, pnpm, Yarn~1 and PyPI locks the check is
+against the lock's own SHA-256 or stronger hash. Yarn~2+ lock checksums
+cover Yarn's cache archive rather than the registry tarball, so the host
+checks those tarballs against the integrity the registry publishes and
+Yarn checks the lock checksums inside the container; lock entries for
+other platforms that carry no checksum rest on the registry integrity
+alone. The pnpm or Yarn release itself comes from the project's
+\texttt{packageManager} hash when there is one, and otherwise from the
+registry's published integrity or a release pinned in ClearHash.
 \item[Arm N (networked).] The container can reach the registry. npm runs
 \texttt{npm ci} with a lock, or \texttt{npm install -{}-before} the
 publish time without one; pip resolves with
 \texttt{PIP\_UPLOADED\_PRIOR\_TO} set to the publish time.
-\item[Arm I (isolated, inferred lock).] When the commit has no lock arm H
-accepts, a networked container writes a hash-pinned lock as of the
-publish time, and the build then runs as in arm H.
+\item[Arm I (isolated, inferred lock).] A committed lock that arm H
+accepts is used as is. Otherwise a networked container writes a
+hash-pinned lock, restricted to versions uploaded before the publication
+time, and the build then runs as in arm H. Resolving with a date cutoff
+approximates the dependency set available at publication; it does not
+reproduce the registry's state at that time exactly.
 \end{description}
 
 Sources are fetched at depth one, as \texttt{actions/checkout} does by
@@ -142,8 +159,10 @@ version it also drops registry-added \texttt{package.json} fields and
 compares that file with its keys sorted, ignores npm's root
 \texttt{.npmignore} and an sdist's \texttt{PKG-INFO},
 \texttt{*.egg-info} and \texttt{*.dist-info} files, and skips symbolic
-links. We also report T0, a strict comparison without any of those
-rules, in which a symbolic link counts with its target. Every failed
+links. A T1 match means the two trees agree under these rules; it does
+not show that every ignored difference is harmless. We also report T0, a
+strict comparison without any of those rules, in which a symbolic link
+counts with its target. Every failed
 rebuild is assigned the first stage it failed at, and a reason within the
 stage from its error text, using a fixed mapping committed with the
 analysis code.
@@ -216,7 +235,9 @@ does not accept named PEP 751 lock files such as
 \texttt{pylock.build.toml} or other ways of recording a build closure,
 and a verifier that did might do better.
 
-The secondary contrasts on npm point the same way. An inferred lock
+The sets of verified releases are nested in both ecosystems: every
+release that verifies in arm H also verifies in arm I, and every release
+that verifies in arm I also verifies in arm N. On npm, an inferred lock
 recovers 28 of the 47 releases that verify only with the network (arm I
 minus arm H: 4.7 points, 3.0 to 6.4), and arm N still verifies 19 more
 than arm I (3.2 points, 1.8 to 4.6). On PyPI, arm N exceeds arm I by 10
@@ -286,11 +307,11 @@ registry, and five fail to build.
 
 The largest npm build failure, in every arm, is that the package's
 published version does not appear in any \texttt{package.json} at the
-attested commit, because the publish workflow sets the version. A rebuild
-from the commit cannot reproduce such a package without replaying that
-step. TypeScript and Node-engine failures are similar: the recipe is not
-the publisher's workflow, so these failures say more about the recipe
-than about network access.
+attested commit. That is consistent with publish workflows that set the
+version during the release; a rebuild from the commit cannot reproduce
+such a package without replaying that step. TypeScript and Node-engine
+failures likewise occur in every arm and are more likely to reflect the
+generic recipe than network access.
 
 For 64 releases (22 npm, 42 PyPI) the attested commit could not be
 fetched, mostly because the repository has been deleted or made private;
@@ -324,21 +345,32 @@ provenance only, from one snapshot, and the frame reflects what deps.dev
 recorded. npm and PyPI releases were selected by different eligibility
 rules, so the two ecosystems are not directly comparable.
 
-\paragraph{Isolation.} Arm H isolates the build container, not the whole
-verification: a networked host still downloads the dependency archives
-and checks them against the lock's hashes. The approach trusts the lock,
-the hash functions, and that prefetch step.
+\paragraph{Isolation and pinning.} Arm H isolates the build container,
+not the whole verification: a networked host still downloads the
+dependency archives and checks them before the build. Not every check is
+against a hash committed in the repository. Of the 134 npm releases that
+verified in arm H, 74 used an npm lock, 56 a pnpm lock, 1 a Yarn~1 lock,
+2 a Yarn~2+ lock, and 1 is hosted outside GitHub, so its lock type was
+not checked. The two Yarn~2+ releases include
+104 and 27 platform-specific lock entries without checksums, which rest
+on registry integrity. Of the 59 matches that needed pnpm or Yarn, 46
+took that tool's release on the registry's published integrity, because
+the project pinned a version without a hash or used pnpm~12, whose native
+binary no project pin covers.
 
 \section{Related work}
 
-Solarin et al.\ \cite{solarin2026} measure how many artifacts in four
-ecosystems can be verified from registry metadata at tiered equivalence
-levels, and Dietrich et al.\ \cite{dietrich2026} compare alternatively
-built PyPI wheels. OSS Rebuild \cite{ossrebuild} rebuilds packages from
-several ecosystems and publishes attestations of the result. These works
-report how often rebuilds succeed; this study isolates what network
-access and a committed lock contribute, with the same releases rebuilt
-both ways.
+Solarin et al.\ \cite{solarin2026} define a verifier that uses only
+registry-derivable metadata, rebuild artifacts in four ecosystems, and
+report verification at tiered equivalence levels, from byte-identical to
+code-identical after normalizing a catalog of non-executable differences.
+Dietrich et al.\ \cite{dietrich2026} compare alternatively built PyPI
+wheels with daleq4py, which normalizes metadata and Python source before
+comparison. OSS Rebuild \cite{ossrebuild} rebuilds packages from several
+ecosystems with per-package build definitions and compares them after
+applying stabilizers. None of these reports whether the rebuilds had
+network access. This study rebuilds the same releases with and without
+it, and with and without a committed lock.
 
 \section{Conclusion}
 
@@ -347,16 +379,21 @@ three quarters of what networked verification does, and 45 of the 47
 releases lost in the isolated setting lack a usable committed lock. On
 PyPI, no sampled project committed a lock in the form the verifier
 accepts, while builds from inferred locks verified at nearly the
-networked rate. In both ecosystems, more verifiable releases would
-follow from projects committing hash-pinned locks for their builds, and
-registries that accept provenance could encourage that at publish time.
+networked rate. These results suggest that committing complete,
+hash-pinned locks for the build, in a form verifiers accept, could raise
+isolated verification coverage where the rest of the build is
+reproducible. Registries that accept provenance could encourage such
+locks at publish time.
 
 \section*{Availability}
 
 The study plan, sample, analysis code, and the per-release ledger are in
 the ClearHash repository (\url{https://github.com/Builder106/clear-hash}),
 with the tool versions used tagged \texttt{hv-freeze} and
-\texttt{hv-freeze-2}.
+\texttt{hv-freeze-2}. The study plan is
+\url{https://github.com/Builder106/clear-hash/blob/main/docs/specs/hermetic-verifiability.md}
+and the analysis output reported here is
+\url{https://github.com/Builder106/clear-hash/blob/main/study/main/results/analysis.json}.
 
 \bibliographystyle{plain}
 \bibliography{refs}
