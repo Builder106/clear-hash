@@ -24,7 +24,7 @@ Build provenance on npm and PyPI says which source commit and workflow
 produced a package, and a verifier can check that claim by rebuilding the
 package and comparing the result with what the registry serves. A build
 container with network access can fetch dependencies and other content
-that no committed hash pins. We measure how many attested releases still
+that no committed hash pins. I measure how many attested releases still
 verify when the build container has no network and its dependencies must
 come from a lock committed at the attested commit, downloaded and checked
 before the build. For 600 npm and 600
@@ -66,7 +66,7 @@ it lists. A network-isolated build installs only archives fetched
 beforehand and checked by hash, which leaves less that the verifier has
 to trust at verification time.
 
-We ask how much verifiability that stricter setting costs.
+I ask how much verifiability that stricter setting costs.
 
 \begin{itemize}
 \item \textbf{Q1.} For attested npm and PyPI releases, how many verify
@@ -79,7 +79,7 @@ or the comparison?
 
 The difference between these two settings combines two things: whether
 the build can reach the network, and whether dependencies must be pinned
-by a lock the project committed. We measure them together because that
+by a lock the project committed. I measure them together because that
 combination is what a verifier that trusts only the provenance must
 require. A third setting, an isolated build from a lock inferred as of
 the publication date, separates the two in part.
@@ -98,10 +98,10 @@ not reported here and is deferred to a later version of this paper.
 
 The frame is every npm and PyPI package in the deps.dev public dataset
 \cite{depsdev} (snapshot 9 November 2026) with a verified attestation that
-names a commit. For each package we take its most recent such release
+names a commit. For each package I take its most recent such release
 published on or before 31 October 2026. Packages are ordered by
 \texttt{FARM\_FINGERPRINT} of a fixed seed string and the package name,
-so the draw can be repeated exactly. We take the first 600 npm packages.
+so the draw can be repeated exactly. I take the first 600 npm packages.
 deps.dev records about one attestation per PyPI version, usually a
 wheel's, so PyPI candidates were screened in draw order through PyPI's
 Integrity API, keeping releases with exactly one sdist that has its own
@@ -160,7 +160,7 @@ compares that file with its keys sorted, ignores npm's root
 \texttt{.npmignore} and an sdist's \texttt{PKG-INFO},
 \texttt{*.egg-info} and \texttt{*.dist-info} files, and skips symbolic
 links. A T1 match means the two trees agree under these rules; it does
-not show that every ignored difference is harmless. We also report T0, a
+not show that every ignored difference is harmless. I also report T0, a
 strict comparison without any of those rules, in which a symbolic link
 counts with its target. Every failed
 rebuild is assigned the first stage it failed at, and a reason within the
@@ -175,7 +175,7 @@ test can only confirm the obvious and says nothing about how often the
 isolated build succeeds. Single rates carry Wilson intervals
 \cite{wilson1927} and paired differences Newcombe's interval for paired
 proportions \cite{newcombe1998}. Because some repositories publish
-several sampled packages (one npm monorepo contributes 15), we repeat the
+several sampled packages (one npm monorepo contributes 15), I repeat the
 primary estimate with a repository-level cluster bootstrap and with one
 release per repository.
 
