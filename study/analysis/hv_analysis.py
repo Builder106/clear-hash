@@ -112,8 +112,13 @@ def newcombe_paired(a, b, c, d):
     p1, p2 = (a + b) / n, (a + c) / n
     l1, u1 = wilson(a + b, n)
     l2, u2 = wilson(a + c, n)
+    # Newcombe's phi: a positive covariance term is reduced by n/2 (not below
+    # zero), and phi is zero when any marginal count is zero.
     denominator = (a + b) * (c + d) * (a + c) * (b + d)
-    phi = (a * d - b * c) / math.sqrt(denominator) if denominator else 0.0
+    covariance = a * d - b * c
+    if covariance > 0:
+        covariance = max(covariance - n / 2, 0.0)
+    phi = covariance / math.sqrt(denominator) if denominator else 0.0
     theta = (b - c) / n
     lower = theta - math.sqrt(
         (p1 - l1) ** 2 - 2 * phi * (p1 - l1) * (u2 - p2) + (u2 - p2) ** 2

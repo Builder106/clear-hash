@@ -1,9 +1,10 @@
 """Tests for hv_analysis.
 
 Reference values come from R 4.6.1 (`prop.test(..., correct = FALSE)`,
-`binom.test`, `p.adjust(..., "holm")`) and from a separate R implementation of
-Newcombe's method 10. The ledgers below are hand-written fixtures, not study
-data.
+`binom.test`, `p.adjust(..., "holm")`) and, for Newcombe's method 10, from
+statsmodels' `confint_proportions_paired` (main branch, run against
+statsmodels 0.14.4), which applies Newcombe's n/2 correction to phi. The
+ledgers below are hand-written fixtures, not study data.
 """
 
 import unittest
@@ -31,10 +32,12 @@ class Statistics(unittest.TestCase):
         for got, want in zip(hv.holm([0.03, 0.01, 0.20]), [0.06, 0.03, 0.20]):
             self.assertAlmostEqual(got, want, places=12)
 
-    def test_newcombe_matches_the_r_implementation(self):
+    def test_newcombe_matches_statsmodels(self):
         for cells, want in [
-            ((12, 9, 2, 21), (0.159090909090909, 0.018210226243592, 0.289156659588272)),
-            ((300, 40, 5, 255), (0.058333333333333, 0.036893306775815, 0.079588401349626)),
+            ((12, 9, 2, 21), (0.159090909090909, 0.011242503551198, 0.295371780646609)),
+            ((300, 40, 5, 255), (0.058333333333333, 0.036645140260487, 0.079834066890001)),
+            ((162, 19, 0, 419), (19 / 600, 0.017244367341485, 0.046437296132699)),
+            ((0, 427, 0, 173), (427 / 600, 0.673628895509085, 0.746475557114954)),
         ]:
             for got, expected in zip(hv.newcombe_paired(*cells), want):
                 self.assertAlmostEqual(got, expected, places=12)
