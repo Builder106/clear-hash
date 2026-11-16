@@ -10,3 +10,14 @@ Cargo.lock.bak
 # clearhash workdirs
 clearhash-rebuild-*/
 .vercel
+
+# paper build and archive outputs
+paper/*.pdf
+paper/*.bbl
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.blg
+paper/*.synctex.gz
+paper/*.tar.gz
+paper/*.zip
