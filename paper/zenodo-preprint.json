@@ -1,0 +1,36 @@
+{
+  "upload_type": "publication",
+  "publication_type": "preprint",
+  "title": "Verifying Attested Packages with Network-Isolated Builds: A Paired Rebuild Study of npm and PyPI",
+  "description": "Signed attestations on npm and PyPI name the source commit and workflow behind a package, and a verifier can check that the package matches the commit by rebuilding it and comparing the result with what the registry serves. A networked build container can download dependencies and other content that are not pinned by hashes committed to the repository.\n\nI measure how many attested releases still verify when the build container has no network and its dependencies must come from a lock committed at the attested commit, downloaded and checked before the build. For 600 npm and 600 PyPI releases drawn at random from the deps.dev snapshot of 9 November 2026, each release was rebuilt three ways with the same recipe: an isolated build from a committed lock, a networked build, and an isolated build from a lock inferred as of the publication date.\n\nOn npm, 22.3% of releases verify in the isolated build and 30.2% in the networked one, a paired difference of 7.8 percentage points (95% CI 5.7 to 10.0; exact McNemar p = 1.4e-14). No release verified only in the isolated build, and 45 of the 47 releases that verified only with the network lacked a usable committed lock.\n\nOn PyPI, none of the 558 releases whose source could be retrieved had a committed lock in the one format the verifier accepts, a root pylock.toml, so none verified in the isolated build under that policy, while 71.2% verified with the network and 69.5% in the isolated build from an inferred lock.\n\nUse of AI tools: I used Claude (Anthropic) to assist with writing the manuscript and the analysis code. I reviewed all text, code and results and take full responsibility for the content.",
+  "publication_date": "2026-11-15",
+  "creators": [
+    {
+      "name": "Vaughan, Olayinka",
+      "affiliation": "Wesleyan University",
+      "orcid": "0009-0005-8933-5396"
+    }
+  ],
+  "access_right": "open",
+  "license": "cc-by-4.0",
+  "keywords": [
+    "software supply chain",
+    "build provenance",
+    "reproducible builds",
+    "npm",
+    "PyPI",
+    "network-isolated builds"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "10.5281/zenodo.24246833",
+      "relation": "isSupplementedBy",
+      "resource_type": "software"
+    },
+    {
+      "identifier": "https://github.com/Builder106/clear-hash",
+      "relation": "isSupplementedBy",
+      "resource_type": "software"
+    }
+  ]
+}

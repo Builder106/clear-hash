@@ -1,0 +1,42 @@
+{
+  "upload_type": "software",
+  "title": "ClearHash: code, sample, ledgers and analysis for \"Verifying Attested Packages with Network-Isolated Builds\"",
+  "description": "<p>Code, study plan, sampling frame, per-release ledgers and analysis behind the paper \"Verifying Attested Packages with Network-Isolated Builds: A Paired Rebuild Study of npm and PyPI\". It contains the ClearHash verifier and the study driver, the BigQuery query and the 600 npm and 600 PyPI releases that were drawn, the 3,600 rebuild records and three rerun ledgers, and the analysis code and its output.</p><p>The tool versions used are the commits tagged <code>hv-freeze</code> (c3c9082) and <code>hv-freeze-2</code> (77424cf). This archive is a later commit, 08ec3a3, which also holds the plan, the analysis and the paper source. The ledgers have build-host paths replaced with placeholders. The plan is <code>docs/specs/hermetic-verifiability.md</code>, and <code>study/analysis</code> reproduces every number in the paper from the ledgers with <code>python hv_analysis.py</code>.</p><p>The deps.dev BigQuery snapshot of 9 November 2026 is not included; <code>study/frame/candidates.sql</code> and the seed in the plan redraw the same sample.</p><p>Use of AI tools: I used Claude (Anthropic) to assist with writing the code, the analysis and the manuscript. I reviewed all code, text and results and take full responsibility for the content.</p>",
+  "publication_date": "2026-11-15",
+  "creators": [
+    {
+      "name": "Vaughan, Olayinka",
+      "affiliation": "Wesleyan University",
+      "orcid": "0009-0005-8933-5396"
+    }
+  ],
+  "access_right": "open",
+  "license": "mit",
+  "keywords": [
+    "software supply chain",
+    "build provenance",
+    "reproducible builds",
+    "npm",
+    "PyPI",
+    "network-isolated builds"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/Builder106/clear-hash/tree/08ec3a3f3d92266845017d0d1eb9853648babbbd",
+      "relation": "isDerivedFrom",
+      "resource_type": "software"
+    },
+    {
+      "identifier": "https://github.com/Builder106/clear-hash/tree/hv-freeze",
+      "relation": "isDerivedFrom",
+      "resource_type": "software"
+    },
+    {
+      "identifier": "https://github.com/Builder106/clear-hash/tree/hv-freeze-2",
+      "relation": "isDerivedFrom",
+      "resource_type": "software"
+    }
+  ],
+  "version": "08ec3a3",
+  "notes": "ADD AFTER THE ARXIV ANNOUNCEMENT: a related identifier with the arXiv ID of the paper, relation isSupplementTo, resource_type publication-preprint. Delete this notes field before publishing."
+}
