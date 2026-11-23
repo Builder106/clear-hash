@@ -24,7 +24,10 @@ deny = []
 
 [advisories]
 version = 2
-ignore = []
+ignore = [
+    # Upstream advisory: chrono crate is unmaintained; clearhash-provenance migration to time/jiff planned
+    "RUSTSEC-2026-0543",
+]
 
 [sources]
 unknown-registry = "warn"
